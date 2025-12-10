@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PoseCare – Frontend Pose Tracking</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+    }
+
+    .left, .right {
+      padding: 16px;
+    }
+
+    .left {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #020617;
+    }
+
+    .right {
+      flex: 1;
+      background: #020617;
+      border-left: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #output_canvas {
+      max-width: 100%;
+      border-radius: 12px;
+      border: 1px solid #1f2937;
+      background: black;
+    }
+
+    video {
+      display: none;
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .stat-card {
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #020617;
+      border: 1px solid #1f2937;
+    }
+
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #9ca3af;
+      letter-spacing: 0.08em;
+    }
+
+    .value {
+      font-size: 22px;
+      font-weight: bold;
+      margin-top: 4px;
+    }
+
+    button {
+      padding: 10px 18px;
+      border-radius: 9999px;
+      border: none;
+      background: #22c55e;
+      color: #022c22;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    button:disabled {
+      background: #4b5563;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .status-ok {
+      color: #22c55e;
+    }
+    .status-warn {
+      color: #f97316;
+    }
+    .status-bad {
+      color: #ef4444;
+    }
+
+    .log {
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      background: #020617;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+      padding: 10px;
+      height: 180px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<!-- LEFT: VIDEO + OVERLAY -->
+<div class="left">
+  <canvas id="output_canvas" width="960" height="540"></canvas>
+  <video id="input_video" playsinline></video>
+  <button id="startBtn">Start Camera & Tracking</button>
+  <p style="font-size: 12px; margin-top: 8px; color:#9ca3af;">
+    Stand so that head, shoulders, elbows and hips are fully visible.
+  </p>
+</div>
+
+<!-- RIGHT: METRICS PANEL -->
+<div class="right">
+  <h1>Shoulder Raise Tracker</h1>
+
+  <div class="stat-card">
+    <div class="label">Repetitions</div>
+    <div class="value" id="repCount">0</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Movement Phase</div>
+    <div class="value" id="phase">Idle</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Shoulder Angles (°)</div>
+    <div class="value" id="angles">– / –</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Posture</div>
+    <div id="postureStatus" class="status-ok">
+      Shoulders level ✔
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">System Status</div>
+    <div id="systemStatus" class="status-ok">
+      Waiting to start…
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Debug Log</div>
+    <div class="log" id="logBox"></div>
+  </div>
+</div>
+
+<!-- MediaPipe scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<script>
+  const videoElement = document.getElementById("input_video");
+  const canvasElement = document.getElementById("output_canvas");
+  const canvasCtx = canvasElement.getContext("2d");
+
+  const repEl = document.getElementById("repCount");
+  const phaseEl = document.getElementById("phase");
+  const anglesEl = document.getElementById("angles");
+  const postureEl = document.getElementById("postureStatus");
+  const systemEl = document.getElementById("systemStatus");
+  const logBox = document.getElementById("logBox");
+  const startBtn = document.getElementById("startBtn");
+
+  // State for phase / reps
+  let repCount = 0;
+  let phase = "idle";
+  let lastPhase = "idle";
+
+  // EMA smoothing for angles
+  let smoothLeft = null;
+  let smoothRight = null;
+  const alpha = 0.7;
+
+  function log(msg) {
+    const time = new Date().toLocaleTimeString();
+    logBox.textContent = `[${time}] ${msg}\n` + logBox.textContent;
+  }
+
+  function ema(newVal, prevVal) {
+    if (prevVal === null || prevVal === undefined) return newVal;
+    return alpha * newVal + (1 - alpha) * prevVal;
+  }
+
+  function computeAngle(ax, ay, bx, by, cx, cy) {
+    const abx = ax - bx;
+    const aby = ay - by;
+    const cbx = cx - bx;
+    const cby = cy - by;
+
+    const dot = abx * cbx + aby * cby;
+    const magAB = Math.sqrt(abx * abx + aby * aby);
+    const magCB = Math.sqrt(cbx * cbx + cby * cby);
+    if (magAB === 0 || magCB === 0) return null;
+
+    let angle = Math.acos(dot / (magAB * magCB));
+    angle = angle * (180 / Math.PI);
+    return angle;
+  }
+
+  // Thresholds similar to backend
+  const DOWN_THRESHOLD = 40;   // avg shoulder angle < this = "down"
+  const UP_THRESHOLD = 100;    // avg shoulder angle > this = "up"
+  const SHOULDER_LEVEL_THR = 0.03; // y-diff between shoulders (normalized)
+
+  function updateRepsAndPhase(leftAngle, rightAngle, leftShoulder, rightShoulder) {
+    if (leftAngle == null || rightAngle == null) return;
+
+    // EMA smoothing
+    smoothLeft = ema(leftAngle, smoothLeft);
+    smoothRight = ema(rightAngle, smoothRight);
+
+    const l = smoothLeft;
+    const r = smoothRight;
+    const avg = (l + r) / 2;
+
+    // Determine phase
+    if (avg < DOWN_THRESHOLD) {
+      phase = "down";
+    } else if (avg > UP_THRESHOLD) {
+      phase = "up";
+    } else {
+      phase = "mid";
+    }
+
+    // Rep detection: going from DOWN/MID/IDLE to UP = 1 rep
+    if (lastPhase !== "up" && phase === "up") {
+      repCount += 1;
+      repEl.textContent = repCount;
+      log(`Rep counted → total = ${repCount}`);
+    }
+
+    lastPhase = phase;
+    phaseEl.textContent = phase.toUpperCase();
+
+    // Show angles
+    anglesEl.textContent = `${l.toFixed(1)} / ${r.toFixed(1)}`;
+
+    // Simple posture deviation: shoulder level
+    if (leftShoulder && rightShoulder) {
+      const diffY = Math.abs(leftShoulder.y - rightShoulder.y);
+      if (diffY > SHOULDER_LEVEL_THR) {
+        postureEl.textContent = "Keep shoulders level";
+        postureEl.className = "status-warn";
+      } else {
+        postureEl.textContent = "Shoulders level ✔";
+        postureEl.className = "status-ok";
+      }
+    }
+  }
+
+  function onResults(results) {
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+    // Draw image
+    canvasCtx.drawImage(
+      results.image, 0, 0, canvasElement.width, canvasElement.height
+    );
+
+    if (results.poseLandmarks) {
+      // Draw skeleton
+      drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                     { lineWidth: 3 });
+      drawLandmarks(canvasCtx, results.poseLandmarks,
+                    { radius: 4 });
+
+      // Get landmarks
+      const lm = results.poseLandmarks;
+
+      const leftShoulder = lm[11];
+      const rightShoulder = lm[12];
+      const leftElbow = lm[13];
+      const rightElbow = lm[14];
+      const leftHip = lm[23];
+      const rightHip = lm[24];
+
+      // Shoulder raise angle: elbow–shoulder–hip
+      const leftAngle = computeAngle(
+        leftElbow.x, leftElbow.y,
+        leftShoulder.x, leftShoulder.y,
+        leftHip.x, leftHip.y
+      );
+      const rightAngle = computeAngle(
+        rightElbow.x, rightElbow.y,
+        rightShoulder.x, rightShoulder.y,
+        rightHip.x, rightHip.y
+      );
+
+      updateRepsAndPhase(leftAngle, rightAngle, leftShoulder, rightShoulder);
+
+      systemEl.textContent = "Tracking…";
+      systemEl.className = "status-ok";
+    } else {
+      systemEl.textContent = "No pose detected";
+      systemEl.className = "status-bad";
+    }
+
+    canvasCtx.restore();
+  }
+
+  // Init MediaPipe Pose
+  const pose = new Pose({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }
+  });
+
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  pose.onResults(onResults);
+
+  let camera = null;
+
+  startBtn.onclick = async () => {
+    if (camera) return;
+
+    systemEl.textContent = "Requesting camera…";
+    systemEl.className = "status-warn";
+
+    camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await pose.send({image: videoElement});
+      },
+      width: 960,
+      height: 540
+    });
+
+    camera.start();
+    startBtn.disabled = true;
+    startBtn.textContent = "Camera Running";
+    systemEl.textContent = "Tracking started. Perform shoulder raises.";
+    systemEl.className = "status-ok";
+    log("Camera & pose tracking started");
+  };
+</script>
+</body>
+</html>
