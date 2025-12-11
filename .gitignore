@@ -1,0 +1,8 @@
+# Python / Environment files
+backend/.env
+
+# IDE / Editor files
+.vscode/
+
+# Python cache directories
+backend/__pycache__/

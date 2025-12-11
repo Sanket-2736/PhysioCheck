@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PoseCare – Shoulder Raise Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+    }
+
+    .left, .right {
+      padding: 16px;
+    }
+
+    .left {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #020617;
+    }
+
+    .right {
+      flex: 1;
+      background: #020617;
+      border-left: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    #output_canvas {
+      max-width: 100%;
+      border-radius: 12px;
+      border: 1px solid #1f2937;
+      background: #000;
+    }
+
+    video { display: none; }
+
+    .stat-card {
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #0a0f23;
+      border: 1px solid #1f2937;
+    }
+
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #9ca3af;
+      letter-spacing: 0.06em;
+    }
+
+    .value {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+
+    button {
+      padding: 12px 18px;
+      border-radius: 9999px;
+      border: none;
+      background: #22c55e;
+      color: #012f19;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    button:disabled {
+      background: #4b5563;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .status-ok   { color: #22c55e; }
+    .status-warn { color: #f97316; }
+    .status-bad  { color: #ef4444; }
+
+    .log {
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      background: #0a0f23;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+      padding: 10px;
+      height: 180px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<!-- LEFT VIEW -->
+<div class="left">
+  <canvas id="output_canvas" width="960" height="540"></canvas>
+  <video id="input_video" playsinline></video>
+  <button id="startBtn">Start Camera & Tracking</button>
+  <button id="mockBackendBtn" style="background:#38bdf8; margin-top:6px;">Send Dummy Session Data</button>
+
+  <p style="font-size: 12px; margin-top: 8px; color:#9ca3af;">
+    Ensure head, shoulders, elbows & hips are visible.
+  </p>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="right">
+  <h1>Shoulder Raise Tracker</h1>
+
+  <div class="stat-card">
+    <div class="label">Repetitions</div>
+    <div class="value" id="repCount">0</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Movement Phase</div>
+    <div class="value" id="phase">Idle</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Shoulder Angles (°)</div>
+    <div class="value" id="angles">– / –</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">Posture</div>
+    <div id="postureStatus" class="status-ok">Shoulders level ✔</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="label">System Status</div>
+    <div id="systemStatus" class="status-ok">Waiting to start…</div>
+  </div>
+
+  <div>
+    <div class="label">Debug Log</div>
+    <div class="log" id="logBox"></div>
+  </div>
+</div>
+
+<!-- MEDIAPIPE JS -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<script>
+  // HTML Elements
+  const videoElement = document.getElementById("input_video");
+  const canvasElement = document.getElementById("output_canvas");
+  const canvasCtx = canvasElement.getContext("2d");
+
+  const repEl = document.getElementById("repCount");
+  const phaseEl = document.getElementById("phase");
+  const anglesEl = document.getElementById("angles");
+  const postureEl = document.getElementById("postureStatus");
+  const systemEl = document.getElementById("systemStatus");
+  const logBox = document.getElementById("logBox");
+  const startBtn = document.getElementById("startBtn");
+  const mockBtn = document.getElementById("mockBackendBtn");
+
+  // Tracking State
+  let repCount = 0;
+  let phase = "idle";
+  let lastPhase = "idle";
+  let smoothLeft = null;
+  let smoothRight = null;
+  const alpha = 0.6;
+
+  function log(t) {
+    const now = new Date().toLocaleTimeString();
+    logBox.textContent = `[${now}] ${t}\n` + logBox.textContent;
+  }
+
+  function ema(n, prev) {
+    return prev === null ? n : alpha * n + (1 - alpha) * prev;
+  }
+
+  function computeAngle(ax, ay, bx, by, cx, cy) {
+    const abx = ax - bx, aby = ay - by;
+    const cbx = cx - bx, cby = cy - by;
+    const dot = abx * cbx + aby * cby;
+
+    const magAB = Math.sqrt(abx * abx + aby * aby);
+    const magCB = Math.sqrt(cbx * cbx + cby * cby);
+    if (!magAB || !magCB) return null;
+
+    let angle = Math.acos(dot / (magAB * magCB));
+    return angle * (180 / Math.PI);
+  }
+
+  const DOWN_THR = 40;
+  const UP_THR = 100;
+  const SHOULDER_THR = 0.03;
+
+  function updateReps(leftA, rightA, lS, rS) {
+    if (leftA == null || rightA == null) return;
+
+    smoothLeft = ema(leftA, smoothLeft);
+    smoothRight = ema(rightA, smoothRight);
+
+    const avg = (smoothLeft + smoothRight) / 2;
+
+    // Determine phase
+    if (avg < DOWN_THR) phase = "down";
+    else if (avg > UP_THR) phase = "up";
+    else phase = "mid";
+
+    // Rep counting rule
+    if (lastPhase !== "up" && phase === "up") {
+      repCount++;
+      repEl.textContent = repCount;
+      log("Rep: " + repCount);
+    }
+    lastPhase = phase;
+    phaseEl.textContent = phase.toUpperCase();
+
+    // Show angles
+    anglesEl.textContent =
+      `${smoothLeft.toFixed(1)} / ${smoothRight.toFixed(1)}`;
+
+    // Shoulder level
+    const diffY = Math.abs(lS.y - rS.y);
+    if (diffY > SHOULDER_THR) {
+      postureEl.textContent = "Keep shoulders level";
+      postureEl.className = "status-warn";
+    } else {
+      postureEl.textContent = "Shoulders level ✔";
+      postureEl.className = "status-ok";
+    }
+  }
+
+  function onResults(results) {
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+    if (results.poseLandmarks) {
+      drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { lineWidth: 3 });
+      drawLandmarks(canvasCtx, results.poseLandmarks, { radius: 4 });
+
+      const lm = results.poseLandmarks;
+
+      const Ls = lm[11], Rs = lm[12], Lh = lm[23], Rh = lm[24];
+      const Le = lm[13], Re = lm[14];
+
+      const leftA = computeAngle(Le.x, Le.y, Ls.x, Ls.y, Lh.x, Lh.y);
+      const rightA = computeAngle(Re.x, Re.y, Rs.x, Rs.y, Rh.x, Rh.y);
+
+      updateReps(leftA, rightA, Ls, Rs);
+
+      systemEl.textContent = "Tracking…";
+      systemEl.className = "status-ok";
+    } else {
+      systemEl.textContent = "No pose detected";
+      systemEl.className = "status-bad";
+    }
+
+    canvasCtx.restore();
+  }
+
+  // MediaPipe Pose
+  const pose = new Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  pose.onResults(onResults);
+
+  let camera = null;
+
+  startBtn.onclick = () => {
+    if (camera) return;
+
+    systemEl.textContent = "Starting camera…";
+    systemEl.className = "status-warn";
+
+    camera = new Camera(videoElement, {
+      onFrame: async () => { await pose.send({ image: videoElement }); },
+      width: 960, height: 540
+    });
+
+    camera.start();
+
+    startBtn.disabled = true;
+    startBtn.textContent = "Camera Running";
+    systemEl.textContent = "Tracking started. Perform the exercise.";
+    log("Camera + pose tracking started.");
+  };
+
+
+  // ------------------------------------------------------------------
+  // SEND DUMMY SESSION DATA → BACKEND /sessions/start + /session/{id}
+  // ------------------------------------------------------------------
+  async function dummySessionData() {
+    const payload = {
+      exercise_id: 1,
+      patient_id: 1,
+      target_reps: 10,
+      max_duration: 30,
+      notes: "Dummy Test"
+    };
+
+    log("Sending dummy session start…");
+
+    const res = await fetch("http://localhost:8000/sessions/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    log("Backend Response: " + JSON.stringify(data));
+  }
+
+  mockBtn.onclick = dummySessionData;
+</script>
+
+</body>
+</html>
