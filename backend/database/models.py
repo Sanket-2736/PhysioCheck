@@ -89,7 +89,10 @@ class Physician(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     specialization = Column(String(150))
     license_id = Column(String(100))
+    is_verified = Column(Boolean, default=False)
     years_experience = Column(Integer)
+    credential_photo = Column(String(500))
+
 
     # NEW: store profile photo url
     profile_photo = Column(String(500))

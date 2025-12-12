@@ -69,7 +69,9 @@ from routers.exercises_router import router as exercises_router
 from routers.rehab_router import router as rehab_router
 from routers.sessions_router import router as sessions_router
 from routers.profile_router import router as profile_router
+from routers.admin_router import router as admin_router
 
+app.include_router(admin_router)
 app.include_router(profile_router)
 app.include_router(auth_router)
 app.include_router(exercises_router)

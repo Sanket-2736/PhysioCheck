@@ -45,16 +45,42 @@ class SignupRequest(BaseModel):
             injury_description=injury_description,
             goals=goals,
         )
-
+    
 
 class PhysicianSignupRequest(BaseModel):
     full_name: str
-    email: EmailStr
+    email: str
     password: str
     specialization: str
-    license_id: Optional[str] = None
-    years_experience: Optional[int] = None
+    license_id: str
+    years_experience: int
 
+    @classmethod
+    def as_form(
+        cls,
+        full_name: str = Form(...),
+        email: str = Form(...),
+        password: str = Form(...),
+        specialization: str = Form(...),
+        license_id: str = Form(...),
+        years_experience: int = Form(...)
+    ):
+        return cls(
+            full_name=full_name,
+            email=email,
+            password=password,
+            specialization=specialization,
+            license_id=license_id,
+            years_experience=years_experience
+        )
+
+
+class PhysicianSignupResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: int
+    role: str = "physician"
+    is_verified: bool
 
 class LoginRequest(BaseModel):
     email: EmailStr
