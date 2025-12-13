@@ -114,12 +114,8 @@ class Exercise(Base):
     created_by = Column(Integer, ForeignKey("physicians.user_id"))
     created_at = Column(TIMESTAMP, server_default=func.now())
 
-    physician = relationship("Physician")
 
 
-# ---------------------------------------------------------
-# EXERCISE PRESETS (replaces EXERCISE_LIBRARY)
-# ---------------------------------------------------------
 class ExercisePreset(Base):
     __tablename__ = "exercise_presets"
 
@@ -139,12 +135,16 @@ class PoseTemplate(Base):
 
     id = Column(Integer, primary_key=True)
     exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=False)
+
     pose_type = Column(Enum(PoseType), default=PoseType.reference)
+
     joints = Column(JSON, nullable=False)
     reference_angles = Column(JSON, nullable=False)
+
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     exercise = relationship("Exercise")
+
 
 
 # ---------------------------------------------------------

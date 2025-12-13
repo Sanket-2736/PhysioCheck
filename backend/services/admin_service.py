@@ -1,6 +1,7 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
+from sqlalchemy.orm import selectinload
 
 from database.models import User, Physician, Patient, RehabPlan, Session
 from utils.email_utils import send_email
@@ -36,7 +37,12 @@ class AdminService:
     # ------------------------------------
     @staticmethod
     async def get_pending_physicians(db: AsyncSession):
-        q = await db.execute(select(Physician).where(Physician.is_verified == False))
+        q = await db.execute(
+            select(Physician)
+            .options(selectinload(Physician.user))
+            .where(Physician.is_verified == False)
+        )
+
         physicians = q.scalars().all()
 
         return {
@@ -62,7 +68,11 @@ class AdminService:
     @staticmethod
     async def approve_physician(user_id: int, db: AsyncSession):
 
-        q = await db.execute(select(Physician).where(Physician.user_id == user_id))
+        q = await db.execute(
+            select(Physician)
+            .options(selectinload(Physician.user))
+            .where(Physician.user_id == user_id)
+        )
         physician = q.scalar_one_or_none()
 
         if not physician:
@@ -72,10 +82,14 @@ class AdminService:
         await db.commit()
 
         # OPTIONAL EMAIL
-        send_email(
+        await send_email(
             to=physician.user.email,
             subject="Your PhysioCheck Account is Approved",
-            body="Congratulations! Your physician account has been verified by the admin."
+            html_content="""
+                <h2>Account Approved 🎉</h2>
+                <p>Your physician account has been successfully verified by the admin.</p>
+                <p>You can now log in and access your dashboard.</p>
+            """
         )
 
         return {"success": True, "message": "Physician approved"}
@@ -85,13 +99,17 @@ class AdminService:
     # ------------------------------------
     @staticmethod
     async def reject_physician(user_id: int, db: AsyncSession):
-        q = await db.execute(select(Physician).where(Physician.user_id == user_id))
+
+        q = await db.execute(
+            select(Physician)
+            .options(selectinload(Physician.user))
+            .where(Physician.user_id == user_id)
+        )
         physician = q.scalar_one_or_none()
 
         if not physician:
             raise HTTPException(404, "Physician not found")
 
-        # Remove their account completely
         await db.delete(physician)
         await db.commit()
 

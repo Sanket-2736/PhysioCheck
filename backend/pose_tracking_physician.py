@@ -2,55 +2,17 @@ import cv2
 import mediapipe as mp
 import time
 import math
-import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
 
 # -------------------------------------------------
-# EXERCISE DEFINITIONS (physician-facing presets)
-# -------------------------------------------------
-EXERCISE_LIBRARY: Dict[str, Dict[str, Any]] = {
-    "ShoulderRaise": {
-        "captureTime": 5,
-        "criticalJoints": ["left_shoulder", "right_shoulder"],
-        "angleDefinitions": {
-            "shoulder": {
-                "minAngle": 40,
-                "maxAngle": 140,
-                "errorIfNotReached": "Raise arms higher"
-            }
-        },
-        "alignmentRules": {
-            "shoulderLevel": {
-                "maxHeightDifference": 0.03,
-                "errorMessage": "Keep shoulders level"
-            }
-        }
-    },
-
-    "BicepCurl": {
-        "captureTime": 5,
-        "criticalJoints": ["left_elbow", "right_elbow"],
-        "angleDefinitions": {
-            "elbow": {
-                "minAngle": 40,
-                "maxAngle": 160,
-                "errorIfNotReached": "Complete the curl"
-            }
-        },
-        "alignmentRules": {}
-    }
-}
-
-
-# -------------------------------------------------
-# Pose extraction / angles
+# Pose extraction utilities
 # -------------------------------------------------
 def extract_pose_dictionary(landmarks) -> Dict[str, Dict[str, float]]:
-    joints: Dict[str, Dict[str, float]] = {}
+    joints = {}
     for idx, name in enumerate(mp_pose.PoseLandmark):
         lm = landmarks.landmark[idx]
         joints[name.name.lower()] = {
@@ -84,27 +46,36 @@ def get_angle(joints: Dict[str, Dict[str, float]],
 
 
 def validate_visibility(joints: Dict[str, Dict[str, float]],
-                        critical: list,
+                        critical_joints: list,
                         thr: float = 0.5) -> bool:
-    for j in critical:
+    for j in critical_joints:
         if j not in joints or joints[j]["visibility"] < thr:
             return False
     return True
 
 
 # -------------------------------------------------
-# Physician static capture → exercise definition JSON
+# LIVE TRACKING (DB-READY via callback)
 # -------------------------------------------------
-def capture_exercise_definition(exercise_name: str) -> Dict[str, Any]:
-    if exercise_name not in EXERCISE_LIBRARY:
-        return {"error": "Invalid exercise"}
-
-    meta = EXERCISE_LIBRARY[exercise_name]
-    capture_time = meta["captureTime"]
+def run_live_pose_tracking(
+    exercise_id: int,
+    critical_joints: list,
+    angle_map: Dict[str, tuple],
+    duration: int = 10,
+    callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    show_video: bool = True
+):
+    """
+    Runs live pose tracking and emits frame-by-frame features.
+    angle_map example:
+    {
+        "left_elbow": ("left_shoulder", "left_elbow", "left_wrist"),
+        "right_elbow": ("right_shoulder", "right_elbow", "right_wrist")
+    }
+    """
 
     cap = cv2.VideoCapture(0)
     start_time = time.time()
-    final_joints: Optional[Dict[str, Dict[str, float]]] = None
 
     with mp_pose.Pose(
         model_complexity=1,
@@ -122,16 +93,82 @@ def capture_exercise_definition(exercise_name: str) -> Dict[str, Any]:
             result = pose.process(rgb)
 
             if result.pose_landmarks:
+                joints = extract_pose_dictionary(result.pose_landmarks)
+
+                angles = {}
+                for key, (a, b, c) in angle_map.items():
+                    angles[key] = get_angle(joints, a, b, c)
+
+                event = {
+                    "exercise_id": exercise_id,
+                    "timestamp": time.time(),
+                    "joints": joints,
+                    "angles": angles,
+                    "visibility_ok": validate_visibility(joints, critical_joints)
+                }
+
+                if callback:
+                    callback(event)
+
+                if show_video:
+                    mp_drawing.draw_landmarks(
+                        frame,
+                        result.pose_landmarks,
+                        mp_pose.POSE_CONNECTIONS
+                    )
+
+            if show_video:
+                cv2.imshow("Live Pose Tracking", frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+
+            if time.time() - start_time >= duration:
+                break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+# -------------------------------------------------
+# STATIC CAPTURE (REFERENCE POSE)
+# -------------------------------------------------
+def capture_reference_pose(
+    exercise_id: int,
+    critical_joints: list,
+    angle_map: Dict[str, tuple],
+    capture_time: int = 5
+) -> Dict[str, Any]:
+
+    cap = cv2.VideoCapture(0)
+    start = time.time()
+    final_joints = None
+
+    with mp_pose.Pose(
+        model_complexity=1,
+        smooth_landmarks=True,
+        min_detection_confidence=0.6,
+        min_tracking_confidence=0.6
+    ) as pose:
+
+        while cap.isOpened():
+            ok, frame = cap.read()
+            if not ok:
+                continue
+
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = pose.process(rgb)
+
+            if result.pose_landmarks:
+                final_joints = extract_pose_dictionary(result.pose_landmarks)
                 mp_drawing.draw_landmarks(
                     frame,
                     result.pose_landmarks,
                     mp_pose.POSE_CONNECTIONS
                 )
-                final_joints = extract_pose_dictionary(result.pose_landmarks)
 
-            cv2.imshow("Physician Capture", frame)
+            cv2.imshow("Reference Pose Capture", frame)
 
-            if time.time() - start_time >= capture_time:
+            if time.time() - start >= capture_time:
                 break
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -143,49 +180,40 @@ def capture_exercise_definition(exercise_name: str) -> Dict[str, Any]:
     if not final_joints:
         return {"error": "No pose detected"}
 
-    if not validate_visibility(final_joints, meta["criticalJoints"]):
-        return {"error": "Critical joints not clearly visible in capture"}
+    if not validate_visibility(final_joints, critical_joints):
+        return {"error": "Critical joints not visible"}
 
-    # -------------------------------------------------
-    # Reference angles per exercise (for future advanced use)
-    # -------------------------------------------------
-    reference_angles: Dict[str, float] = {}
+    reference_angles = {}
+    for key, (a, b, c) in angle_map.items():
+        reference_angles[key] = get_angle(final_joints, a, b, c)
 
-    if exercise_name == "ShoulderRaise":
-        reference_angles["left_shoulder"] = get_angle(
-            final_joints, "left_elbow", "left_shoulder", "left_hip"
-        )
-        reference_angles["right_shoulder"] = get_angle(
-            final_joints, "right_elbow", "right_shoulder", "right_hip"
-        )
-
-    elif exercise_name == "BicepCurl":
-        reference_angles["left_elbow"] = get_angle(
-            final_joints, "left_shoulder", "left_elbow", "left_wrist"
-        )
-        reference_angles["right_elbow"] = get_angle(
-            final_joints, "right_shoulder", "right_elbow", "right_wrist"
-        )
-
-    exercise_definition: Dict[str, Any] = {
-        "exerciseName": exercise_name,
-        "criticalJoints": meta["criticalJoints"],
-        "referenceAngles": reference_angles,
-        "jointAngles": meta.get("angleDefinitions", {}),
-        "alignmentRules": meta.get("alignmentRules", {}),
-        "createdBy": "physician",
-        "createdAt": time.time()
+    return {
+        "exercise_id": exercise_id,
+        "joints": final_joints,
+        "reference_angles": reference_angles,
+        "captured_at": time.time()
     }
 
-    return exercise_definition
-
 
 # -------------------------------------------------
-# LOCAL TEST (physician side)
+# LOCAL TEST
 # -------------------------------------------------
 if __name__ == "__main__":
-    exercise = "ShoulderRaise"
-    definition = capture_exercise_definition(exercise)
 
-    print("\n✅ PHYSICIAN EXERCISE DEFINITION:\n")
-    print(json.dumps(definition, indent=2))
+    def debug_callback(event):
+        print(
+            f"[FRAME] angles={event['angles']} "
+            f"visibility={event['visibility_ok']}"
+        )
+
+    run_live_pose_tracking(
+        exercise_id=1,
+        critical_joints=["left_elbow", "right_elbow"],
+        angle_map={
+            "left_elbow": ("left_shoulder", "left_elbow", "left_wrist"),
+            "right_elbow": ("right_shoulder", "right_elbow", "right_wrist")
+        },
+        duration=10,
+        callback=debug_callback,
+        show_video=True
+    )
