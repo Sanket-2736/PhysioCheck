@@ -53,9 +53,11 @@ async def validation_exception_handler(request, exc):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:5500",
+        "http://localhost:5500",],
     allow_methods=["*"],
     allow_headers=["*"],
+    
 )
 
 # ---------------------------------------------------
@@ -70,7 +72,11 @@ from routers.rehab_router import router as rehab_router
 from routers.sessions_router import router as sessions_router
 from routers.profile_router import router as profile_router
 from routers.admin_router import router as admin_router
+from routers.subscription_router import router as subscription_router
+from routers.physician_router import router as physician_router
 
+app.include_router(physician_router)
+app.include_router(subscription_router)
 app.include_router(admin_router)
 app.include_router(profile_router)
 app.include_router(auth_router)

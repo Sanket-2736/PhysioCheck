@@ -78,6 +78,14 @@ class Patient(Base):
     goals = Column(String(500))
 
     user = relationship("User")
+    physician_id = Column(
+        Integer,
+        ForeignKey("physicians.user_id"),
+        nullable=True   
+    )
+
+    physician = relationship("Physician", back_populates="patients")
+
 
 
 # ---------------------------------------------------------
@@ -98,6 +106,11 @@ class Physician(Base):
     profile_photo = Column(String(500))
 
     user = relationship("User")
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+
+    patients = relationship("Patient", back_populates="physician")
+
 
 
 # ---------------------------------------------------------

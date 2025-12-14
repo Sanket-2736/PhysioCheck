@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Physician Rep Capture</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</head>
+
+<body>
+<h2>Shoulder Raise – Capture 1 Rep</h2>
+
+<video id="video" width="640" height="480" autoplay></video>
+<br><br>
+<button onclick="startCapture()">Start Capture</button>
+
+<script>
+const video = document.getElementById("video");
+let frames = [];
+let capturing = false;
+
+const pose = new Pose({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+});
+
+pose.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+const LANDMARK_NAMES = Object.values(Pose.PoseLandmark);
+
+function angle(a, b, c) {
+  const ab = [a.x - b.x, a.y - b.y];
+  const cb = [c.x - b.x, c.y - b.y];
+  const dot = ab[0]*cb[0] + ab[1]*cb[1];
+  const mag = Math.hypot(...ab) * Math.hypot(...cb);
+  if (mag === 0) return 0;
+  return Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
+}
+
+pose.onResults(res => {
+  if (!capturing || !res.poseLandmarks) return;
+
+  const joints = {};
+
+  res.poseLandmarks.forEach((lm, i) => {
+    joints[LANDMARK_NAMES[i].toLowerCase()] = {
+      x: lm.x,
+      y: lm.y,
+      z: lm.z,
+      visibility: lm.visibility
+    };
+  });
+
+  if (!joints.left_elbow || !joints.left_shoulder || !joints.left_hip) return;
+
+  const angles = {
+    left_shoulder: angle(
+      joints.left_elbow,
+      joints.left_shoulder,
+      joints.left_hip
+    )
+  };
+
+  frames.push({
+    timestamp: Date.now() / 1000,
+    joints,
+    angles
+  });
+});
+
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await pose.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+camera.start();
+
+async function startCapture() {
+  frames = [];
+  capturing = true;
+
+  setTimeout(async () => {
+    capturing = false;
+
+    console.log("📤 Sending frames:", frames.length);
+    console.log("📤 Sample frame:", frames[0]);
+
+    const res = await fetch("http://localhost:8000/exercises/1/capture-rep", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer YOUR_JWT_TOKEN"
+      },
+      body: JSON.stringify({ frames })
+    });
+
+    const data = await res.json();
+    console.log("✅ Backend response:", data);
+
+    if (!res.ok) {
+      alert(data.detail || "Capture failed");
+      return;
+    }
+
+    alert("Rep captured successfully");
+  }, 8000);
+}
+</script>
+</body>
+</html>
