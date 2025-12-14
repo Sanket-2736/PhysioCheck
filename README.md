@@ -15,6 +15,12 @@ PhysioCheck enables physicians to create custom exercise protocols and monitor p
 - **Role-based Access**: Separate interfaces for physicians, patients, and administrators
 - **Rehabilitation Plans**: Structured therapy programs with progress tracking
 - **Analytics Dashboard**: Performance metrics and progress visualization
+- **Advanced Rep Analysis**: Automatic detection of exercise phases (start, peak, end)
+- **Stability Assessment**: Movement quality analysis with jitter detection
+- **Subscription Management**: Patient-physician relationship management
+- **Pose Template System**: Reference pose capture and comparison
+- **Interactive Testing**: HTML-based testing interfaces for pose tracking
+- **Modular Architecture**: Separated pose tracking modules for enhanced maintainability
 
 ## Tech Stack
 
@@ -31,23 +37,55 @@ PhysioCheck enables physicians to create custom exercise protocols and monitor p
 backend/
 ├── main.py                 # FastAPI application entry point
 ├── .env                   # Environment configuration
+├── pose_tracking_patient.py    # Legacy patient tracking (moved to pose/)
+├── pose_tracking_physician.py  # Legacy physician tracking (moved to pose/)
+├── test.py                # Testing utilities
 ├── database/
 │   ├── connection.py      # Database connection setup
 │   └── models.py          # SQLAlchemy models
+├── pose/                  # Enhanced pose tracking modules
+│   ├── main.py           # Standalone pose tracking server
+│   ├── pose_tracking_patient.py    # Patient session tracking
+│   ├── pose_tracking_physician.py  # Physician pose capture
+│   ├── rep_analysis.py   # Repetition detection algorithms
+│   └── stability_analysis.py      # Movement stability assessment
 ├── routers/
 │   ├── auth_router.py     # Authentication endpoints
 │   ├── exercises_router.py # Exercise management
 │   ├── sessions_router.py  # Session tracking
 │   ├── rehab_router.py    # Rehabilitation plans
+│   ├── rehab_plan_router.py # Detailed rehab plan management
 │   ├── profile_router.py  # User profiles
-│   └── admin_router.py    # Admin functions
+│   ├── admin_router.py    # Admin functions
+│   ├── physician_router.py # Physician-specific endpoints
+│   └── subscription_router.py # Patient-physician subscriptions
 ├── services/              # Business logic layer
+│   ├── auth_service.py    # Authentication logic
+│   ├── exercises_service.py # Exercise management
+│   ├── sessions_service.py # Session handling
+│   ├── rehab_service.py   # Rehabilitation plans
+│   ├── rehab_plan_service.py # Advanced rehab planning
+│   ├── profile_service.py # User profile management
+│   ├── admin_service.py   # Admin operations
+│   ├── subscription_service.py # Subscription management
+│   ├── pose_template_service.py # Pose template handling
+│   ├── exercise_rule_service.py # Exercise rule generation
+│   └── rep_capture_service.py   # Rep analysis and capture
 ├── schemas/               # Pydantic models
+│   ├── auth_schemas.py    # Authentication schemas
+│   ├── exercise_schemas.py # Exercise-related schemas
+│   ├── profile_schemas.py # Profile schemas
+│   ├── subscription_schema.py # Subscription schemas
+│   ├── pose_template_schema.py # Pose template schemas
+│   └── rep_capture_schema.py   # Rep capture schemas
 ├── utils/                 # Utility functions
-├── pose/
-│   ├── pose_tracking_patient.py    # Patient session tracking
-│   └── pose_tracking_physician.py  # Physician pose capture
-└── test.py               # Testing utilities
+│   ├── security.py       # Security utilities
+│   ├── cloudinary.py     # File upload handling
+│   └── email_utils.py    # Email functionality
+└── tests/                # Testing and demo files
+    ├── test.html         # Frontend pose tracking demo
+    ├── test2.html        # Additional test interface
+    └── test_capture.html # Pose capture testing
 ```
 
 ## Installation
@@ -68,7 +106,12 @@ cd backend
 
 2. **Install dependencies**
 ```bash
-pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudinary python-multipart python-jose bcrypt
+pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudinary python-multipart python-jose bcrypt statistics
+```
+
+**Alternative: Install from requirements.txt (if available)**
+```bash
+pip install -r requirements.txt
 ```
 
 3. **Configure environment variables**
@@ -98,11 +141,28 @@ CREATE DATABASE physiocheck;
 ```
 
 5. **Run the application**
+
+**Main Application:**
 ```bash
 python -m uvicorn main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`
+**Standalone Pose Tracking Server:**
+```bash
+cd pose
+python -m uvicorn main:app --reload --port 8001
+```
+
+The main API will be available at `http://localhost:8000`
+The pose tracking server will be available at `http://localhost:8001`
+
+6. **Test the system**
+
+Open the testing interfaces in your browser:
+- `backend/tests/test.html` - Interactive pose tracking demo
+- `backend/tests/test_capture.html` - Pose capture testing
+
+Or visit the API documentation at `http://localhost:8000/docs`
 
 ## API Documentation
 
@@ -113,6 +173,7 @@ The API will be available at `http://localhost:8000`
 - `POST /auth/login` - User login
 - `POST /auth/login-admin` - Admin login
 - `GET /auth/me` - Get current user info
+- `GET /auth/physician/status` - Check physician verification status
 
 ### Exercise Management
 
@@ -120,13 +181,31 @@ The API will be available at `http://localhost:8000`
 - `GET /exercises` - List all exercises
 - `GET /exercise/{exercise_id}` - Get exercise details
 - `POST /exercises/{exercise_id}/capture-pose` - Capture reference poses
+- `POST /exercises/{exercise_id}/capture-keypoints` - Capture pose keypoints
 - `POST /exercises/{exercise_id}/generate-angle-ranges` - Generate angle rules
+- `POST /exercises/{exercise_id}/generate-timing-stability` - Generate timing rules
+- `POST /exercises/{exercise_id}/generate-alignment-rules` - Generate alignment rules
 
 ### Session Tracking
 
 - `POST /start-session` - Start patient exercise session
 - `GET /session/{session_id}` - Get session status and progress
 - `GET /video-feed` - Live camera stream
+
+### Physician Management
+
+- `GET /physician/patients` - Get physician's assigned patients
+
+### Subscription Management
+
+- `POST /subscription/subscribe` - Subscribe patient to physician
+
+### Pose Analysis
+
+- **Rep Detection**: Automatic identification of exercise repetitions
+- **Phase Analysis**: Detection of start, peak, and end phases
+- **Stability Metrics**: Assessment of movement consistency and control
+- **Template Matching**: Comparison against reference poses
 
 ### Core Functionality
 
@@ -153,8 +232,12 @@ The API will be available at `http://localhost:8000`
 - **Critical Joint Validation**: Ensures required body parts are visible
 - **Angle Measurement**: Calculates joint angles for form assessment
 - **Alignment Rules**: Checks body symmetry and positioning
-- **Smoothing**: Reduces noise in pose detection
+- **Smoothing**: Reduces noise in pose detection with EMA filtering
 - **Phase Detection**: Identifies exercise phases (up/down/mid)
+- **Rep Analysis**: Automatic detection of repetition start, peak, and end points
+- **Stability Assessment**: Measures movement consistency and jitter
+- **Template System**: Reference pose capture and comparison
+- **Multi-pose Support**: Handles various exercise types and movements
 
 ## Database Schema
 
@@ -165,10 +248,17 @@ The API will be available at `http://localhost:8000`
 - **physicians**: Physician credentials and specializations
 - **exercises**: Exercise definitions and metadata
 - **exercise_presets**: Exercise configuration and rules
+- **pose_templates**: Reference poses for exercises (start, peak, end, reference)
+- **exercise_rules**: Joint angle ranges, timing, and stability rules
+- **exercise_logic**: Rep counting and phase detection logic
 - **sessions**: Individual exercise sessions
 - **session_progress**: Real-time session events
 - **session_results**: Final session summaries
 - **rehab_plans**: Structured rehabilitation programs
+- **rehab_plan_exercises**: Exercise assignments within plans
+- **performance_metrics**: Detailed analytics and metrics
+- **common_errors**: Error pattern tracking
+- **ai_rule_suggestions**: AI-generated exercise improvements
 
 ## Usage Examples
 
@@ -215,9 +305,30 @@ python test.py
 ### Adding New Exercises
 
 1. Create exercise definition in database
-2. Implement pose tracking logic in `pose_tracking_patient.py`
-3. Define validation rules and angle calculations
-4. Test with live camera feed
+2. Capture reference poses using pose template system
+3. Generate angle ranges and timing rules automatically
+4. Implement pose tracking logic in `pose/pose_tracking_patient.py`
+5. Define validation rules and alignment checks
+6. Test with HTML testing interfaces in `tests/` directory
+
+### Testing Interfaces
+
+The project includes interactive HTML testing interfaces:
+
+- **test.html**: Complete pose tracking demo with real-time feedback
+- **test2.html**: Alternative testing interface
+- **test_capture.html**: Pose capture and template testing
+
+These can be opened directly in a browser for testing pose tracking functionality.
+
+### Rep Analysis System
+
+The enhanced rep analysis system provides:
+
+- **Phase Detection**: Automatic identification of exercise phases
+- **Stability Metrics**: Movement quality assessment
+- **Template Matching**: Comparison against reference poses
+- **Quality Scoring**: Comprehensive exercise performance evaluation
 
 ### Error Handling
 
