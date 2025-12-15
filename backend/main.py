@@ -16,6 +16,14 @@ from database.models import Exercise, ExercisePreset, Session, SessionProgress, 
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -51,14 +59,7 @@ async def validation_exception_handler(request, exc):
         content={"success": False, "message": "Invalid input!"}
     )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500",
-        "http://localhost:5500",],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    
-)
+
 
 # ---------------------------------------------------
 # CAMERA STREAM (same as your original file)
@@ -74,7 +75,11 @@ from routers.profile_router import router as profile_router
 from routers.admin_router import router as admin_router
 from routers.subscription_router import router as subscription_router
 from routers.physician_router import router as physician_router
+from routers.patient_router import router as patient_router
+from routers.patient_exercises_router import router as patient_exercises_router
 
+app.include_router(patient_exercises_router)
+app.include_router(patient_router)
 app.include_router(physician_router)
 app.include_router(subscription_router)
 app.include_router(admin_router)

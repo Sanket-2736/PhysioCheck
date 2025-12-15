@@ -301,3 +301,59 @@ class AIRuleSuggestion(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     exercise = relationship("Exercise")
+
+
+from sqlalchemy import Column, Integer, ForeignKey, Boolean, DateTime
+from datetime import datetime
+
+from sqlalchemy import Column, Integer, Float, DateTime, JSON
+
+class ExerciseSession(Base):
+    __tablename__ = "exercise_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    patient_id = Column(Integer, nullable=False)
+    physician_id = Column(Integer, nullable=False)
+    exercise_id = Column(Integer, nullable=False)
+    patient_exercise_id = Column(Integer, nullable=False)
+
+    completed_reps = Column(Integer)
+    completed_sets = Column(Integer)
+
+    accuracy_score = Column(Float)
+    error_summary = Column(JSON)
+    joint_stats = Column(JSON)
+
+    duration_sec = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PatientExercise(Base):
+    __tablename__ = "patient_exercises"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    patient_id = Column(
+        Integer,
+        ForeignKey("patients.user_id"),
+        nullable=False
+    )
+
+    physician_id = Column(
+        Integer,
+        ForeignKey("physicians.user_id"),
+        nullable=False
+    )
+
+    exercise_id = Column(
+        Integer,
+        ForeignKey("exercises.id"),
+        nullable=False
+    )
+
+    sets = Column(Integer, default=3)
+    reps = Column(Integer, default=10)
+    frequency_per_day = Column(Integer, default=1)
+
+    is_active = Column(Boolean, default=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow)

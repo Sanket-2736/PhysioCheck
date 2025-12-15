@@ -1,118 +1,83 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Physician Rep Capture</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <title>Rep Capture Test</title>
+  <style>
+    body { font-family: Arial; }
+    video { width: 480px; border: 1px solid #ccc; }
+    button { padding: 10px 16px; margin-top: 10px; }
+    pre { background: #111; color: #0f0; padding: 10px; }
+  </style>
 </head>
-
 <body>
-<h2>Shoulder Raise – Capture 1 Rep</h2>
 
-<video id="video" width="640" height="480" autoplay></video>
-<br><br>
-<button onclick="startCapture()">Start Capture</button>
+<h2>PhysioCheck – Capture Rep Test</h2>
+
+<video id="video" autoplay playsinline></video><br>
+<button onclick="start()">Start Capture</button>
+<button onclick="stop()">Stop & Send</button>
+
+<pre id="log"></pre>
 
 <script>
-const video = document.getElementById("video");
+const EXERCISE_ID = 3;
+const API_URL = `http://localhost:8000/exercises/${EXERCISE_ID}/capture-rep`;
+const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo4LCJyb2xlIjoicGh5c2ljaWFuIiwiZXhwIjoxNzY1ODkxNDE0fQ.W3Gpsipw71b4zS_9H9f5-Yb0Bxf5psYe9qYBVYF5a8U";
+
 let frames = [];
-let capturing = false;
+let stream = null;
+let timer = null;
 
-const pose = new Pose({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-});
+const log = (msg) =>
+  document.getElementById("log").textContent += msg + "\n";
 
-pose.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.6
-});
+async function start() {
+  frames = [];
+  stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
 
-const LANDMARK_NAMES = Object.values(Pose.PoseLandmark);
-
-function angle(a, b, c) {
-  const ab = [a.x - b.x, a.y - b.y];
-  const cb = [c.x - b.x, c.y - b.y];
-  const dot = ab[0]*cb[0] + ab[1]*cb[1];
-  const mag = Math.hypot(...ab) * Math.hypot(...cb);
-  if (mag === 0) return 0;
-  return Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
+  timer = setInterval(captureFrame, 100); // ~10 FPS
+  log("📸 Capturing frames...");
 }
 
-pose.onResults(res => {
-  if (!capturing || !res.poseLandmarks) return;
+function stop() {
+  clearInterval(timer);
+  stream.getTracks().forEach(t => t.stop());
+  sendFrames();
+}
 
-  const joints = {};
-
-  res.poseLandmarks.forEach((lm, i) => {
-    joints[LANDMARK_NAMES[i].toLowerCase()] = {
-      x: lm.x,
-      y: lm.y,
-      z: lm.z,
-      visibility: lm.visibility
-    };
-  });
-
-  if (!joints.left_elbow || !joints.left_shoulder || !joints.left_hip) return;
-
-  const angles = {
-    left_shoulder: angle(
-      joints.left_elbow,
-      joints.left_shoulder,
-      joints.left_hip
-    )
-  };
-
+function captureFrame() {
+  // 🔴 MOCK pose data (replace later with MediaPipe)
   frames.push({
     timestamp: Date.now() / 1000,
-    joints,
-    angles
-  });
-});
-
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await pose.send({ image: video });
-  },
-  width: 640,
-  height: 480
-});
-camera.start();
-
-async function startCapture() {
-  frames = [];
-  capturing = true;
-
-  setTimeout(async () => {
-    capturing = false;
-
-    console.log("📤 Sending frames:", frames.length);
-    console.log("📤 Sample frame:", frames[0]);
-
-    const res = await fetch("http://localhost:8000/exercises/1/capture-rep", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer YOUR_JWT_TOKEN"
-      },
-      body: JSON.stringify({ frames })
-    });
-
-    const data = await res.json();
-    console.log("✅ Backend response:", data);
-
-    if (!res.ok) {
-      alert(data.detail || "Capture failed");
-      return;
+    joints: {
+      left_shoulder: { x: 0.4, y: 0.3 },
+      left_elbow: { x: 0.45, y: 0.45 }
+    },
+    angles: {
+      left_shoulder: 40 + Math.random() * 60,
+      left_elbow: 30 + Math.random() * 40
     }
+  });
+}
 
-    alert("Rep captured successfully");
-  }, 8000);
+async function sendFrames() {
+  log(`📤 Sending frames: ${frames.length}`);
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${TOKEN}`
+    },
+    body: JSON.stringify({ frames })
+  });
+
+  const data = await res.json();
+  log("✅ Response:");
+  log(JSON.stringify(data, null, 2));
 }
 </script>
+
 </body>
 </html>

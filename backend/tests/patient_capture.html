@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Patient Exercise Session</title>
+  <style>
+    body { font-family: Arial; background:#f5f5f5; padding:20px; }
+    video { width: 420px; border:2px solid #333; }
+    button { padding:10px 16px; margin:6px; }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    .card { background:#fff; padding:12px; margin-top:10px; border-radius:6px; }
+    .ok { color: green; }
+    .bad { color: red; }
+    pre { background:#111; color:#0f0; padding:10px; }
+  </style>
+</head>
+<body>
+
+<h2>🧍 Patient Exercise Session</h2>
+
+<video id="video" autoplay playsinline></video><br>
+
+<button id="startBtn" onclick="startSession()">▶ Start Session</button>
+<button id="endBtn" onclick="endSession()" disabled>⏹ End Session</button>
+
+<div class="card">
+  <h3>Live Feedback</h3>
+  <div id="accuracy">Accuracy: --</div>
+  <div id="errors"></div>
+</div>
+
+<div class="card">
+  <h3>Final Result</h3>
+  <pre id="final"></pre>
+</div>
+
+<script>
+/* ================================
+   CONFIG
+================================ */
+const PATIENT_EXERCISE_ID = 2;   // 🔴 patient_exercises.id
+const BASE = "http://localhost:8000";
+const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo3LCJyb2xlIjoicGF0aWVudCIsImV4cCI6MTc2NTg5NjMyMn0.G8owYn1TQQAr0QMVU5A3hJmWH-uzOSDPH4ZGc7i0UEE";
+
+/* ================================
+   STATE
+================================ */
+let sessionId = null;
+let stream = null;
+let timer = null;
+
+/* ================================
+   START SESSION
+================================ */
+async function startSession() {
+  console.clear();
+
+  const res = await fetch(
+    `${BASE}/patient/start-session/${PATIENT_EXERCISE_ID}`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${TOKEN}`
+      }
+    }
+  );
+
+  const data = await res.json();
+  console.log("Start session response:", data);
+
+  if (!data.success) {
+    alert("Start session failed");
+    return;
+  }
+
+  sessionId = data.session_id;
+  console.log("Session ID:", sessionId);
+
+  stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+
+  timer = setInterval(sendFrame, 300); // ~3 FPS
+
+  document.getElementById("startBtn").disabled = true;
+  document.getElementById("endBtn").disabled = false;
+}
+
+/* ================================
+   SEND FRAME (LIVE FEEDBACK)
+================================ */
+async function sendFrame() {
+  if (!sessionId) return;
+
+  const payload = {
+    frame: {
+      timestamp: Date.now() / 1000,
+      angles: {
+        left_shoulder: 40 + Math.random() * 60,
+        left_elbow: 30 + Math.random() * 40
+      }
+    }
+  };
+
+  const res = await fetch(
+    `${BASE}/patient/session/${sessionId}/frame`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${TOKEN}`
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+
+  const data = await res.json();
+  renderFeedback(data);
+}
+
+/* ================================
+   RENDER FEEDBACK
+================================ */
+function renderFeedback(data) {
+  document.getElementById("accuracy").innerHTML =
+    `Accuracy: <b class="${data.accuracy >= 70 ? 'ok' : 'bad'}">${data.accuracy}%</b>`;
+
+  let html = "";
+  for (let j in data.errors) {
+    html += `<div class="bad">${j}: incorrect</div>`;
+  }
+
+  document.getElementById("errors").innerHTML =
+    html || "<div class='ok'>No errors</div>";
+}
+
+/* ================================
+   END SESSION
+================================ */
+async function endSession() {
+  if (!sessionId) {
+    alert("Session not started yet");
+    return;
+  }
+
+  clearInterval(timer);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+
+  const res = await fetch(
+    `${BASE}/patient/end-session/${sessionId}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${TOKEN}`
+      },
+      body: JSON.stringify({})
+    }
+  );
+
+  const data = await res.json();
+  console.log("End session response:", data);
+
+  document.getElementById("final").textContent =
+    JSON.stringify(data, null, 2);
+
+  document.getElementById("startBtn").disabled = false;
+  document.getElementById("endBtn").disabled = true;
+
+  sessionId = null;
+}
+</script>
+
+</body>
+</html>

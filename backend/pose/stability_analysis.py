@@ -1,51 +1,27 @@
-from typing import List, Dict
 import statistics
 
+def assess_stability(frames):
+    if not frames:
+        return {"stability": "unknown"}
 
-def compute_joint_jitter(values: List[float]) -> float:
-    """
-    Average frame-to-frame change.
-    Lower = more stable.
-    """
-    if len(values) < 2:
-        return 0.0
-
-    diffs = [
-        abs(values[i] - values[i - 1])
-        for i in range(1, len(values))
-    ]
-    return round(sum(diffs) / len(diffs), 3)
-
-
-def assess_stability(frames: List[Dict]) -> Dict:
-    """
-    Computes stability metrics across frames.
-
-    Returns:
-    {
-      "overall": float,
-      "perJoint": { joint: jitter }
-    }
-    """
-
-    joint_series = {}
+    variances = []
 
     for frame in frames:
-        for joint, angle in frame.get("angles", {}).items():
-            joint_series.setdefault(joint, []).append(angle)
+        if not frame.angles:
+            continue
 
-    per_joint = {
-        joint: compute_joint_jitter(series)
-        for joint, series in joint_series.items()
-        if len(series) > 3
-    }
+        values = list(frame.angles.values())
+        if len(values) > 1:
+            variances.append(statistics.pstdev(values))
 
-    overall = (
-        round(statistics.mean(per_joint.values()), 3)
-        if per_joint else 0.0
-    )
+    if not variances:
+        return {"stability": "poor"}
 
-    return {
-        "overall": overall,
-        "perJoint": per_joint
-    }
+    avg = sum(variances) / len(variances)
+
+    if avg < 3:
+        return {"stability": "excellent"}
+    elif avg < 6:
+        return {"stability": "good"}
+    else:
+        return {"stability": "poor"}

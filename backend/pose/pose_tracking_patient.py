@@ -318,3 +318,99 @@ if __name__ == "__main__":
     )
 
     print("\n✅ FINAL SUMMARY:\n", summary)
+
+def init_session_state(target_reps: int):
+    return {
+        "phase": "idle",
+        "status": "ACTIVE",
+        "repCount": 0,
+        "targetReps": target_reps,
+
+        "errorTimers": {
+            "shoulderAsymmetry": 0.0
+        },
+        "errorStats": {
+            "shoulderAsymmetry": {
+                "count": 0,
+                "totalTime": 0.0
+            }
+        },
+
+        "unstableTime": 0.0,
+        "lostTrackingTime": 0.0,
+        "startTime": time.time(),
+        "smoothedAngles": {}
+    }
+
+def process_frame(frame_bytes: bytes, exercise_definition: dict, state: dict):
+    import numpy as np
+
+    img = cv2.imdecode(
+        np.frombuffer(frame_bytes, np.uint8),
+        cv2.IMREAD_COLOR
+    )
+
+    with mp_pose.Pose(
+        model_complexity=1,
+        smooth_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
+
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb)
+
+        if not result.pose_landmarks:
+            state["lostTrackingTime"] += 0.03
+            return {"status": "PAUSED", "reason": "No pose detected"}
+
+        joints = extract_pose_dictionary(result.pose_landmarks)
+
+        valid, missing = validate_critical_joints(
+            joints, exercise_definition["criticalJoints"]
+        )
+        if not valid:
+            return {"status": "PAUSED", "missingJoints": missing}
+
+        evaluate_frame(
+            exercise_definition,
+            joints,
+            state,
+            dt=0.03
+        )
+
+        if state["repCount"] >= state["targetReps"]:
+            state["status"] = "COMPLETED"
+
+        return {
+            "status": state["status"],
+            "repCount": state["repCount"]
+        }
+
+from database.models import ExerciseSession
+
+async def save_exercise_session(
+    db,
+    patient_id,
+    physician_id,
+    exercise_id,
+    patient_exercise_id,
+    state
+):
+    duration = time.time() - state["startTime"]
+
+    session = ExerciseSession(
+        patient_id=patient_id,
+        physician_id=physician_id,
+        exercise_id=exercise_id,
+        patient_exercise_id=patient_exercise_id,
+        completed_reps=state["repCount"],
+        accuracy_score=1.0,  # refine later
+        error_summary=state["errorStats"],
+        duration_sec=duration
+    )
+
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session

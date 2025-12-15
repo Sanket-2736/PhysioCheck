@@ -19,18 +19,24 @@ class RepCaptureService:
         if len(frames) < 15:
             raise HTTPException(400, "Insufficient frame data")
 
-        q = await db.execute(select(Exercise).where(Exercise.id == exercise_id))
+        q = await db.execute(
+            select(Exercise).where(Exercise.id == exercise_id)
+        )
         exercise = q.scalar_one_or_none()
         if not exercise:
             raise HTTPException(404, "Exercise not found")
 
         primary_joint = "left_shoulder"
 
+        # ---- ANGLE SERIES ----
         angle_series = [
-            f["angles"].get(primary_joint)
+            f.angles.get(primary_joint)
             for f in frames
-            if primary_joint in f["angles"]
+            if f.angles and primary_joint in f.angles
         ]
+
+        if len(angle_series) < 5:
+            raise HTTPException(400, "Not enough valid joint angles")
 
         start_i, peak_i, end_i = detect_rep_phases(angle_series)
 
@@ -38,11 +44,15 @@ class RepCaptureService:
         peak = frames[peak_i]
         end = frames[end_i]
 
+        # ---- REFERENCE POSE (MOST STABLE) ----
         reference = min(
             frames,
-            key=lambda f: statistics.pstdev(f["angles"].values())
+            key=lambda f: statistics.pstdev(
+                f.angles.values()
+            ) if f.angles else float("inf")
         )
 
+        # ---- SAVE POSES ----
         for pose_type, frame in [
             (PoseType.reference, reference),
             (PoseType.start, start),
@@ -53,29 +63,32 @@ class RepCaptureService:
                 exercise_id, pose_type, frame, db
             )
 
+        # ---- ANGLE RANGES ----
         angle_ranges = {
             j: {
-                "min": min(start["angles"][j], peak["angles"][j]),
-                "max": max(start["angles"][j], peak["angles"][j]),
+                "min": min(start.angles[j], peak.angles[j]),
+                "max": max(start.angles[j], peak.angles[j]),
             }
-            for j in start["angles"]
-            if j in peak["angles"]
+            for j in start.angles
+            if j in peak.angles
         }
 
+        # ---- TIMING ----
         timing = {
             "repDuration": round(
-                end["timestamp"] - start["timestamp"], 2
+                end.timestamp - start.timestamp, 2
             )
         }
 
+        # ---- STABILITY ----
         stability = assess_stability(frames)
 
-        rule_q = await db.execute(
-            select(ExerciseRule).where(
-                ExerciseRule.exercise_id == exercise_id
-            )
+        # ---- SAVE RULES ----
+        q = await db.execute(
+            select(ExerciseRule)
+            .where(ExerciseRule.exercise_id == exercise_id)
         )
-        rule = rule_q.scalar_one_or_none()
+        rule = q.scalar_one_or_none()
 
         payload = {
             "angleRanges": angle_ranges,
@@ -86,16 +99,24 @@ class RepCaptureService:
         if rule:
             rule.rules.update(payload)
         else:
-            db.add(ExerciseRule(exercise_id=exercise_id, rules=payload))
+            db.add(
+                ExerciseRule(
+                    exercise_id=exercise_id,
+                    rules=payload
+                )
+            )
 
         await db.commit()
-
         return {"success": True}
 
+    # -------------------------------------
+    # SAVE SINGLE POSE TEMPLATE
+    # -------------------------------------
     @staticmethod
     async def _save_pose(exercise_id, pose_type, frame, db):
         q = await db.execute(
-            select(PoseTemplate).where(
+            select(PoseTemplate)
+            .where(
                 PoseTemplate.exercise_id == exercise_id,
                 PoseTemplate.pose_type == pose_type
             )
@@ -105,10 +126,12 @@ class RepCaptureService:
             await db.delete(old)
             await db.commit()
 
-        db.add(PoseTemplate(
-            exercise_id=exercise_id,
-            pose_type=pose_type,
-            joints=frame["joints"],
-            reference_angles=frame["angles"]
-        ))
+        db.add(
+            PoseTemplate(
+                exercise_id=exercise_id,
+                pose_type=pose_type,
+                joints=frame.joints,
+                reference_angles=frame.angles
+            )
+        )
         await db.commit()
