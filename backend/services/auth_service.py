@@ -177,6 +177,10 @@ class AuthService:
         role_q = await db.execute(select(Role).where(Role.id == user.role_id))
         role = role_q.scalar_one_or_none()
 
+        if not user.is_active:
+            raise HTTPException(403, "Account suspended")
+
+
         token = create_access_token({
             "user_id": user.id,
             "role": role.name if role else "unknown"
@@ -241,4 +245,3 @@ class AuthService:
             "user_id": user.id,
             "role": "admin"
         }
-

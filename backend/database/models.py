@@ -76,6 +76,8 @@ class Patient(Base):
     address = Column(String(500))
     injury_description = Column(String(500))
     goals = Column(String(500))
+    is_active = Column(Boolean, default=True)
+
 
     user = relationship("User")
     physician_id = Column(
@@ -357,3 +359,19 @@ class PatientExercise(Base):
 
     is_active = Column(Boolean, default=True)
     assigned_at = Column(DateTime, default=datetime.utcnow)
+
+
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from database.connection import Base
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(100), nullable=False)
+    target_type = Column(String(100), nullable=False)
+    target_id = Column(Integer, nullable=False)
+    description = Column(String(255))
+    created_at = Column(DateTime, server_default=func.now())
