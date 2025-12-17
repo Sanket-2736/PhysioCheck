@@ -15,7 +15,7 @@
 </head>
 <body>
 
-<h2>🧍 Patient Exercise Session</h2>
+<h2>🧍 Patient Exercise Session (Rep-based)</h2>
 
 <video id="video" autoplay playsinline></video><br>
 
@@ -24,7 +24,7 @@
 
 <div class="card">
   <h3>Live Feedback</h3>
-  <div id="accuracy">Accuracy: --</div>
+  <div id="accuracy">Reps: --</div>
   <div id="errors"></div>
 </div>
 
@@ -37,9 +37,9 @@
 /* ================================
    CONFIG
 ================================ */
-const PATIENT_EXERCISE_ID = 2;   // 🔴 patient_exercises.id
+const PATIENT_EXERCISE_ID = 2;   // patient_exercises.id
 const BASE = "http://localhost:8000";
-const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo3LCJyb2xlIjoicGF0aWVudCIsImV4cCI6MTc2NTg5NjMyMn0.G8owYn1TQQAr0QMVU5A3hJmWH-uzOSDPH4ZGc7i0UEE";
+const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo3LCJyb2xlIjoicGF0aWVudCIsImV4cCI6MTc2NTk3OTkwMn0.Ao5rlNrShQAeTqvXRT2VYXKIzPmtw86o8cI66M03whs";
 
 /* ================================
    STATE
@@ -68,17 +68,24 @@ async function startSession() {
   console.log("Start session response:", data);
 
   if (!data.success) {
-    alert("Start session failed");
+    alert("Start session failed: " + (data.message || JSON.stringify(data)));
     return;
   }
 
   sessionId = data.session_id;
   console.log("Session ID:", sessionId);
 
-  stream = await navigator.mediaDevices.getUserMedia({ video: true });
-  video.srcObject = stream;
+  // Start camera (for UX only; backend not using video yet)
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const video = document.getElementById("video");
+    video.srcObject = stream;
+  } catch (e) {
+    console.warn("Camera access failed:", e);
+  }
 
-  timer = setInterval(sendFrame, 300); // ~3 FPS
+  // Send synthetic frames at ~3 FPS (backend rep logic is time-based)
+  timer = setInterval(sendFrame, 300);
 
   document.getElementById("startBtn").disabled = true;
   document.getElementById("endBtn").disabled = false;
@@ -90,6 +97,8 @@ async function startSession() {
 async function sendFrame() {
   if (!sessionId) return;
 
+  // For now backend ignores angles and uses its own time-based fake angle,
+  // but we keep payload shape ready for future real angles.
   const payload = {
     frame: {
       timestamp: Date.now() / 1000,
@@ -100,36 +109,45 @@ async function sendFrame() {
     }
   };
 
-  const res = await fetch(
-    `${BASE}/patient/session/${sessionId}/frame`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${TOKEN}`
-      },
-      body: JSON.stringify(payload)
-    }
-  );
+  try {
+    const res = await fetch(
+      `${BASE}/patient/session/${sessionId}/frame`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${TOKEN}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
 
-  const data = await res.json();
-  renderFeedback(data);
+    const data = await res.json();
+    console.log("Live frame response:", data);
+    renderFeedback(data);
+  } catch (err) {
+    console.error("Error sending frame:", err);
+  }
 }
 
 /* ================================
-   RENDER FEEDBACK
+   RENDER FEEDBACK (REP-BASED)
 ================================ */
 function renderFeedback(data) {
+  const repCount = data.repCount ?? 0;
+  const repState = data.repState ?? "--";
+  const status = data.status ?? "--";
+
   document.getElementById("accuracy").innerHTML =
-    `Accuracy: <b class="${data.accuracy >= 70 ? 'ok' : 'bad'}">${data.accuracy}%</b>`;
+    `Reps: <b>${repCount}</b> | State: ${repState} | Status: ${status}`;
 
   let html = "";
-  for (let j in data.errors) {
+  const errors = data.errors || {};
+  for (let j in errors) {
     html += `<div class="bad">${j}: incorrect</div>`;
   }
-
   document.getElementById("errors").innerHTML =
-    html || "<div class='ok'>No errors</div>";
+    html || "<div class='ok'>No major errors</div>";
 }
 
 /* ================================
@@ -142,7 +160,9 @@ async function endSession() {
   }
 
   clearInterval(timer);
-  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+  }
 
   const res = await fetch(
     `${BASE}/patient/end-session/${sessionId}`,

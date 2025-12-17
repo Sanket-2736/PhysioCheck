@@ -30,3 +30,8 @@ class ExerciseService:
         await db.refresh(exercise)
 
         return exercise
+
+    @staticmethod
+    async def get_exercise_by_id(exercise_id: int, db: AsyncSession):
+        q = await db.execute(select(Exercise).where(Exercise.id == exercise_id))
+        return q.scalar_one_or_none()

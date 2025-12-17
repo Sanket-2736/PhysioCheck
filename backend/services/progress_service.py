@@ -1,4 +1,4 @@
-from sqlalchemy import func
+from sqlalchemy import select, func
 from database.models import ExerciseSession
 
 class ProgressService:
@@ -6,21 +6,23 @@ class ProgressService:
     @staticmethod
     async def weekly(patient_id: int, db):
         q = await db.execute(
-            func.select(
+            select(
+                func.year(ExerciseSession.created_at).label("year"),
                 func.week(ExerciseSession.created_at).label("week"),
-                func.sum(ExerciseSession.completed_reps),
-                func.avg(ExerciseSession.accuracy_score)
+                func.sum(ExerciseSession.completed_reps).label("reps"),
+                func.avg(ExerciseSession.accuracy_score).label("accuracy")
             )
             .where(ExerciseSession.patient_id == patient_id)
-            .group_by("week")
-            .order_by("week")
+            .group_by("year", "week")
+            .order_by("year", "week")
         )
 
         return [
             {
-                "week": w,
-                "total_reps": reps,
-                "avg_accuracy": round(acc, 2)
+                "year": year,
+                "week": week,
+                "total_reps": reps or 0,
+                "avg_accuracy": round(acc or 0, 2)
             }
-            for w, reps, acc in q.all()
+            for year, week, reps, acc in q.all()
         ]

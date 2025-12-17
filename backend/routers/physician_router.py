@@ -1,62 +1,117 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from services.report_service import ReportService
+from services.live_feedback_service import LiveFeedbackService
+from services.patient_progress_service import PatientProgressService
+from database.connection import get_db
+from routers.auth_router import require_role
+from services.patient_session_service import PatientSessionService
+
+router = APIRouter(prefix="/patient", tags=["Patient"])
+
+
 from sqlalchemy.future import select
+from database.models import PatientExercise
 
-from services.physician_analytics_service import PhysicianAnalyticsService
-from database.connection import get_db
-from routers.auth_router import require_role
-from database.models import Patient
-
-router = APIRouter(prefix="/physician", tags=["Physician"])
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from routers.auth_router import require_role
-from database.connection import get_db
-from schemas.patient_exercise_schema import AssignExerciseRequest
-from services.patient_exercise_service import PatientExerciseService
-
-router = APIRouter(prefix="/physician", tags=["Physician"])
-
-@router.post("/assign-exercise")
-async def assign_exercise(
-    body: AssignExerciseRequest,
-    user=Depends(require_role("physician")),
+@router.post("/session/{session_id}/frame")
+async def live_feedback(
+    session_id: int,
+    payload: dict,
+    user=Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db)
 ):
-    return await PatientExerciseService.assign_exercise(
-        physician_id=user["user_id"],
-        payload=body,
+    return await LiveFeedbackService.evaluate_frame(
+        session_id=session_id,
+        frame=payload["frame"],
         db=db
     )
 
-@router.get("/patients")
-async def get_my_patients(
-    user=Depends(require_role("physician")),
+@router.post("/end-session/{session_id}")
+async def end_session(
+    session_id: int,
+    payload: dict,
+    user=Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db)
 ):
-    q = await db.execute(
-        select(Patient).where(Patient.physician_id == user["user_id"])
+    return await PatientSessionService.end_session(
+        session_id=session_id,
+        payload=payload,
+        db=db
     )
-    patients = q.scalars().all()
 
+@router.post("/start-session/{patient_exercise_id}")
+async def start_exercise_session(
+    patient_exercise_id: int,
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    return await PatientSessionService.start_session(
+        patient_exercise_id=patient_exercise_id,
+        patient_id=user["user_id"],
+        db=db
+    )
+
+from services.analytics_service import AnalyticsService
+
+@router.get("/analytics/errors")
+async def error_frequency(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
     return {
         "success": True,
-        "patients": [
-            {
-                "patient_id": p.user_id
-            }
-            for p in patients
-        ]
+        "errorFrequency": await AnalyticsService.get_error_frequency(
+            patient_id=user["user_id"],
+            db=db
+        )
     }
 
-@router.get("/patient-analytics")
-async def get_patient_analytics(
-    user=Depends(require_role("physician")),
+@router.get("/analytics/common-mistakes")
+async def common_mistakes(
+    user=Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db)
 ):
-    return await PhysicianAnalyticsService.get_patient_analytics(
-        physician_id=user["user_id"],
-        db=db
-    )
+    return {
+        "success": True,
+        "mistakes": await AnalyticsService.get_common_mistakes(
+            patient_id=user["user_id"],
+            db=db
+        )
+    }
+
+@router.get("/analytics/risks")
+async def risk_alerts(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    return {
+        "success": True,
+        "riskAlerts": await AnalyticsService.get_risk_summary(
+            patient_id=user["user_id"],
+            db=db
+        )
+    }
+
+@router.get("/progress")
+async def get_my_progress(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    return {
+        "daily": await PatientProgressService.get_daily_progress(user["user_id"], db),
+        "weekly": await PatientProgressService.get_weekly_progress(user["user_id"], db)
+    }
+
+@router.get("/report")
+async def get_patient_report(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    return {
+        "success": True,
+        "report": await ReportService.patient_report(
+            patient_id=user["user_id"],
+            db=db
+        )
+    }

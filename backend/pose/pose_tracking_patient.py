@@ -4,12 +4,10 @@ import time
 import math
 from typing import Dict, Any, Optional, Callable
 
+from pose_tracking_patient import evaluate_frame
+
 mp_pose = mp.solutions.pose
 
-
-# -------------------------------------------------
-# Pose helpers
-# -------------------------------------------------
 def extract_pose_dictionary(landmarks):
     joints = {}
     for idx, name in enumerate(mp_pose.PoseLandmark):
@@ -65,64 +63,59 @@ def validate_critical_joints(joints, critical, vis_thr=0.35):
 # -------------------------------------------------
 # Frame evaluation (smoothed + phase-gated)
 # -------------------------------------------------
-def evaluate_frame(exercise_def, joints, state, dt):
+def evaluateframe(exercise_def, joints, state, dt):
     measured_angles = {}
-    smoothed = state["smoothedAngles"]
-
-    name = exercise_def["exerciseName"]
-
-    # ------------- SHOULDER RAISE -------------
-    if name == "ShoulderRaise":
-        raw_left = get_angle(joints, "left_elbow", "left_shoulder", "left_hip")
-        raw_right = get_angle(joints, "right_elbow", "right_shoulder", "right_hip")
-
-        smoothed["left_shoulder"] = ema(raw_left, smoothed.get("left_shoulder"))
-        smoothed["right_shoulder"] = ema(raw_right, smoothed.get("right_shoulder"))
-
-        measured_angles["left_shoulder"] = smoothed["left_shoulder"]
-        measured_angles["right_shoulder"] = smoothed["right_shoulder"]
-
-        if smoothed["left_shoulder"] and smoothed["right_shoulder"]:
-            avg = (smoothed["left_shoulder"] + smoothed["right_shoulder"]) / 2.0
-        else:
-            avg = None
-
-        # ---- Phase detection & reps ----
-        if avg is not None:
-            if avg < 40:
-                phase = "down"
-            elif avg > 100:
-                phase = "up"
+    smoothed = state.get('smoothedAngles', {})
+    name = exercise_def['exerciseName']
+    
+    # GENERIC: Get rep definition from exercise config/DB
+    rep_def = exercise_def.get('repDefinition', {})  # {'joint': 'left_shoulder', 'validRange': [50,110], ...}
+    if rep_def:
+        joint = rep_def['joint']
+        raw_angle = get_angle(joints, *rep_def.get('joints', [joint, 'left_shoulder', 'left_hip']))  # Default joints
+        smoothed_angle = ema(raw_angle, smoothed.get(joint), alpha=0.7)
+        measured_angles[joint] = smoothed_angle
+        
+        # Generic phase detection (looser thresholds)
+        low, high = rep_def.get('validRange', [50, 110])  # Was [40,100]
+        exit_low, exit_high = rep_def.get('exitRange', [0, 60])
+        
+        if smoothed_angle is not None:
+            phase = 'down' if smoothed_angle < low else 'up' if smoothed_angle > high else 'mid'
+            
+            # Rep count on down->up transition
+            if state.get('phase') == 'down' and phase == 'up':
+                state['repCount'] = state.get('repCount', 0) + 1
+            state['phase'] = phase
+    
+    # Alignment rules (exercise-specific but generic structure)
+    if state.get('phase') in ['mid', 'up']:
+        rules = exercise_def.get('alignmentRules', {})
+        shoulder_rule = rules.get('shoulderLevel')
+        if shoulder_rule and 'left_shoulder' in joints and 'right_shoulder' in joints:
+            diff = abs(joints['left_shoulder'][1] - joints['right_shoulder'][1])
+            if diff > shoulder_rule.get('maxHeightDifference', 0.03):
+                state.setdefault('errorTimers', {}).setdefault('shoulderAsymmetry', 0.0)
+                state['errorTimers']['shoulderAsymmetry'] += dt
+                state.setdefault('errorStats', {}).setdefault('shoulderAsymmetry', {'count': 0, 'totalTime': 0.0})
+                state['errorStats']['shoulderAsymmetry']['totalTime'] += dt
+                if state['errorTimers']['shoulderAsymmetry'] > 0.4:
+                    state['errorStats']['shoulderAsymmetry']['count'] += 1
+                    state['errorTimers']['shoulderAsymmetry'] = 0.0
             else:
-                phase = "mid"
+                state['errorTimers']['shoulderAsymmetry'] = 0.0
+    
+    # Update joint stats
+    for joint, angle in measured_angles.items():
+        if angle is None: continue
+        js = state.setdefault('jointStats', {}).setdefault(joint, {'min': angle, 'max': angle, 'sum': 0.0, 'count': 0})
+        js['min'] = min(js['min'], angle)
+        js['max'] = max(js['max'], angle)
+        js['sum'] += angle
+        js['count'] += 1
+    
+    return measured_angles  # SAME OUTPUT STRUCTURE
 
-            if state["phase"] == "down" and phase == "up":
-                state["repCount"] += 1
-
-            state["phase"] = phase
-
-        # ---- Alignment rule (only active in mid/up) ----
-        if state["phase"] in ("mid", "up"):
-            rule = exercise_def.get("alignmentRules", {}).get("shoulderLevel")
-            if rule and "left_shoulder" in joints and "right_shoulder" in joints:
-                diff = abs(
-                    joints["left_shoulder"]["y"] -
-                    joints["right_shoulder"]["y"]
-                )
-
-                if diff > rule["maxHeightDifference"]:
-                    state["errorTimers"]["shoulderAsymmetry"] += dt
-                    state["errorStats"]["shoulderAsymmetry"]["totalTime"] += dt
-
-                    if state["errorTimers"]["shoulderAsymmetry"] > 0.4:
-                        state["errorStats"]["shoulderAsymmetry"]["count"] += 1
-                        state["errorTimers"]["shoulderAsymmetry"] = 0.0
-                else:
-                    state["errorTimers"]["shoulderAsymmetry"] = 0.0
-
-    # (Later: add more exercises here branching on exercise_def["exerciseName"])
-
-    return measured_angles
 
 
 # -------------------------------------------------
@@ -319,95 +312,125 @@ if __name__ == "__main__":
 
     print("\n✅ FINAL SUMMARY:\n", summary)
 
+import time
+
 def init_session_state(target_reps: int):
     return {
-        "phase": "idle",
-        "status": "ACTIVE",
-        "repCount": 0,
-        "targetReps": target_reps,
-
-        "errorTimers": {
-            "shoulderAsymmetry": 0.0
-        },
-        "errorStats": {
-            "shoulderAsymmetry": {
-                "count": 0,
-                "totalTime": 0.0
-            }
-        },
-
-        "unstableTime": 0.0,
-        "lostTrackingTime": 0.0,
         "startTime": time.time(),
-        "smoothedAngles": {}
+        "repCount": 0,
+        "phase": "down",
+        "status": "ACTIVE",
+
+        "errorSummary": {},
+        "jointStats": {},     
+
+        "smoothedAngles": {},
+        "errorStats": {},
+        "lastTimestamp": None,
+
+        "targetReps": target_reps
     }
 
-def process_frame(frame_bytes: bytes, exercise_definition: dict, state: dict):
-    import numpy as np
+import time
 
-    img = cv2.imdecode(
-        np.frombuffer(frame_bytes, np.uint8),
-        cv2.IMREAD_COLOR
-    )
+def process_frame(
+    frame_bytes: bytes,
+    exercise_definition: dict,
+    state: dict,
+    frame: dict | None = None,   # 🔥 NEW: pass frame with angles
+):
+    """
+    Generalised, direction-agnostic rep detection
+    Now driven by incoming frame['angles'] instead of time.
+    """
+    now = time.time()
 
-    with mp_pose.Pose(
-        model_complexity=1,
-        smooth_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    ) as pose:
+    # ---- 1) Get raw angle from frame ----
+    rep = exercise_definition.get("repDefinition", {
+        "joint": "left_shoulder",
+        "validRange": [80, 120],
+        "exitRange": [0, 60],
+        "minHoldTime": 0.25,
+    })
 
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        result = pose.process(rgb)
+    joint_name = rep.get("joint", "left_shoulder")
+    angles = (frame or {}).get("angles") or {}
 
-        if not result.pose_landmarks:
-            state["lostTrackingTime"] += 0.03
-            return {"status": "PAUSED", "reason": "No pose detected"}
+    # if joint missing, keep angle outside valid range to avoid fake reps
+    raw_angle = float(angles.get(joint_name, 0.0))
 
-        joints = extract_pose_dictionary(result.pose_landmarks)
+    low, high = rep["validRange"]
+    exit_low, exit_high = rep["exitRange"]
+    min_hold = rep["minHoldTime"]
 
-        valid, missing = validate_critical_joints(
-            joints, exercise_definition["criticalJoints"]
-        )
-        if not valid:
-            return {"status": "PAUSED", "missingJoints": missing}
+    # ---- 2) Init state ----
+    state.setdefault("repState", "OUTSIDE")
+    state.setdefault("enteredAt", None)
+    state.setdefault("lastAngle", raw_angle)
+    state.setdefault("targetReps", state.get("targetReps", 5))
+    state.setdefault("startTime", state.get("startTime", now))
+    state.setdefault("status", state.get("status", "ACTIVE"))
 
-        evaluate_frame(
-            exercise_definition,
-            joints,
-            state,
-            dt=0.03
-        )
+    # ---- 3) Smooth angle ----
+    alpha = 0.6
+    angle = alpha * raw_angle + (1 - alpha) * state["lastAngle"]
+    state["lastAngle"] = angle
 
-        if state["repCount"] >= state["targetReps"]:
-            state["status"] = "COMPLETED"
+    # ---- 4) Rep state machine ----
+    if state["repState"] == "OUTSIDE":
+        if low <= angle <= high:
+            state["repState"] = "ENTERED"
+            state["enteredAt"] = now
 
-        return {
-            "status": state["status"],
-            "repCount": state["repCount"]
-        }
+    elif state["repState"] == "ENTERED":
+        if low <= angle <= high:
+            if now - state["enteredAt"] >= min_hold:
+                state["repCount"] = state.get("repCount", 0) + 1
+                state["repState"] = "COUNTED"
+        else:
+            state["repState"] = "OUTSIDE"
+            state["enteredAt"] = None
+
+    elif state["repState"] == "COUNTED":
+        if exit_low <= angle <= exit_high:
+            state["repState"] = "OUTSIDE"
+            state["enteredAt"] = None
+
+    # ---- 5) Session completion ----
+    if state.get("repCount", 0) >= state["targetReps"]:
+        state["status"] = "COMPLETED"
+
+    return {
+        "status": state["status"],
+        "repCount": state.get("repCount", 0),
+        "angle": round(angle, 1),
+        "repState": state["repState"],
+    }
+
 
 from database.models import ExerciseSession
+from datetime import datetime
 
 async def save_exercise_session(
     db,
-    patient_id,
-    physician_id,
-    exercise_id,
-    patient_exercise_id,
-    state
+    patient_id: int,
+    physician_id: int,
+    exercise_id: int,
+    patient_exercise_id: int,
+    state: dict
 ):
-    duration = time.time() - state["startTime"]
-
     session = ExerciseSession(
         patient_id=patient_id,
         physician_id=physician_id,
         exercise_id=exercise_id,
         patient_exercise_id=patient_exercise_id,
         completed_reps=state["repCount"],
-        accuracy_score=1.0,  # refine later
-        error_summary=state["errorStats"],
-        duration_sec=duration
+        completed_sets=1,
+        accuracy_score=0.0,
+        error_summary={},
+        joint_stats={},
+        duration_sec=time.time() - state["startTime"],
+        ended_at=datetime.utcnow()
     )
 
     db.add(session)
