@@ -92,9 +92,11 @@ backend/
 
 ### Prerequisites
 
-- Python 3.8+
-- MySQL 8.0+
-- Webcam for pose tracking
+- **Python 3.8+** (3.9+ recommended)
+- **MySQL 8.0+** or compatible database
+- **Webcam** for pose tracking functionality
+- **Git** for version control
+- **Node.js** (optional, for frontend development)
 
 ### Setup
 
@@ -104,9 +106,15 @@ git clone <repository-url>
 cd backend
 ```
 
-2. **Install dependencies**
+2. **Create virtual environment (recommended)**
 ```bash
-pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudinary python-multipart python-jose bcrypt statistics
+python -m venv physiocheck-env
+source physiocheck-env/bin/activate  # On Windows: physiocheck-env\Scripts\activate
+```
+
+3. **Install dependencies**
+```bash
+pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudinary python-multipart python-jose bcrypt
 ```
 
 **Alternative: Install from requirements.txt (if available)**
@@ -114,8 +122,8 @@ pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudina
 pip install -r requirements.txt
 ```
 
-3. **Configure environment variables**
-Create a `.env` file with:
+4. **Configure environment variables**
+Create a `.env` file in the `backend/` directory with:
 ```env
 # Database
 DATABASE_URL=mysql+aiomysql://username:password@localhost:3306/physiocheck
@@ -133,14 +141,21 @@ SMTP_PASSWORD=your_app_password
 SMTP_FROM="PhysioCheck <your_email@gmail.com>"
 ```
 
-4. **Set up the database**
+5. **Set up the database**
 ```bash
 # Create MySQL database
 mysql -u root -p
 CREATE DATABASE physiocheck;
+EXIT;
 ```
 
-5. **Run the application**
+6. **Initialize database tables**
+The application will automatically create tables on startup, or you can run:
+```bash
+python -c "from database.connection import engine, Base; import asyncio; asyncio.run(engine.begin().run_sync(Base.metadata.create_all))"
+```
+
+7. **Run the application**
 
 **Main Application:**
 ```bash
@@ -154,15 +169,33 @@ python -m uvicorn main:app --reload --port 8001
 ```
 
 The main API will be available at `http://localhost:8000`
-The pose tracking server will be available at `http://localhost:8001`
 
-6. **Test the system**
+8. **Test the system**
 
+**API Documentation & Landing Page:**
+- Visit `http://localhost:8000/` for the main landing page with all documentation links
+- Visit `http://localhost:8000/docs` for interactive Swagger UI documentation
+- Visit `http://localhost:8000/redoc` for alternative ReDoc documentation
+- Visit `http://localhost:8000/health` for API health check
+- Visit `http://localhost:8000/api-info` for detailed API information
+
+**Interactive Testing:**
 Open the testing interfaces in your browser:
 - `backend/tests/test.html` - Interactive pose tracking demo
 - `backend/tests/test_capture.html` - Pose capture testing
+- `backend/tests/test2.html` - Additional testing interface
 
-Or visit the API documentation at `http://localhost:8000/docs`
+**Quick Health Check:**
+```bash
+# Test API health
+curl http://localhost:8000/health
+
+# List available exercises
+curl http://localhost:8000/exercises
+
+# Get API information
+curl http://localhost:8000/api-info
+```
 
 ## API Documentation
 
@@ -264,33 +297,80 @@ Or visit the API documentation at `http://localhost:8000/docs`
 
 ### Starting a Patient Session
 
-```python
-# POST /start-session
+```json
+POST /start-session
 {
     "exercise_id": 1,
     "patient_id": 123,
     "target_reps": 10,
     "max_duration": 300
 }
+
+Response:
+{
+    "sessionId": "uuid-string"
+}
 ```
 
 ### Session Progress Monitoring
 
-```python
-# GET /session/{session_id}
+```json
+GET /session/{session_id}
 {
     "session": {
         "id": "uuid-string",
         "status": "ACTIVE",
         "targetReps": 10,
-        "startedAt": "2024-01-01T10:00:00"
+        "maxDuration": 300,
+        "startedAt": "2024-01-01T10:00:00",
+        "endedAt": null
     },
     "progress": {
         "event": "progress",
         "repCount": 5,
-        "measuredAngles": {...}
+        "status": "ACTIVE",
+        "measuredAngles": {
+            "left_shoulder": 85.2,
+            "right_shoulder": 87.1
+        }
     },
     "final": null
+}
+```
+
+### Creating an Exercise
+
+```json
+POST /exercises/
+{
+    "name": "Shoulder Raise",
+    "category": "Upper Body",
+    "difficulty": "beginner",
+    "target_body_parts": ["shoulders", "arms"],
+    "description": "Raise both arms to shoulder level"
+}
+```
+
+### User Authentication
+
+```json
+POST /auth/login
+{
+    "email": "patient@example.com",
+    "password": "secure_password"
+}
+
+Response:
+{
+    "success": true,
+    "access_token": "jwt_token_here",
+    "token_type": "bearer",
+    "user": {
+        "id": 123,
+        "email": "patient@example.com",
+        "role": "patient",
+        "full_name": "John Doe"
+    }
 }
 ```
 
@@ -299,7 +379,32 @@ Or visit the API documentation at `http://localhost:8000/docs`
 ### Running Tests
 
 ```bash
+# Run basic tests
 python test.py
+
+# Test pose tracking functionality
+python pose/pose_tracking_patient.py
+
+# Test physician pose capture
+python pose/pose_tracking_physician.py
+```
+
+### Development Workflow
+
+1. **Start development server with auto-reload:**
+```bash
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+2. **Monitor logs:**
+```bash
+tail -f logs/app.log  # if logging is configured
+```
+
+3. **Database migrations:**
+```bash
+# After model changes, restart the application to auto-create tables
+python -m uvicorn main:app --reload
 ```
 
 ### Adding New Exercises
@@ -358,29 +463,202 @@ The application includes comprehensive error handling:
 
 ### Docker Deployment
 
+**Dockerfile:**
 ```dockerfile
-FROM python:3.9
+FROM python:3.9-slim
+
+# Install system dependencies for OpenCV and MediaPipe
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY . .
+
+# Expose port
+EXPOSE 8000
+
+# Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Docker Compose:**
+```yaml
+version: '3.8'
+services:
+  physiocheck-backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+aiomysql://root:password@db:3306/physiocheck
+    depends_on:
+      - db
+    volumes:
+      - /dev/video0:/dev/video0  # For webcam access
+    
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: physiocheck
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Camera Access Issues:**
+```bash
+# Check camera permissions
+ls /dev/video*
+# Ensure camera is not being used by another application
+```
+
+**Database Connection Issues:**
+```bash
+# Test MySQL connection
+mysql -h localhost -u root -p physiocheck
+# Check if database exists
+SHOW DATABASES;
+```
+
+**MediaPipe Installation Issues:**
+```bash
+# For M1 Macs
+pip install mediapipe-silicon
+
+# For older systems
+pip install mediapipe==0.8.11
+```
+
+**Port Already in Use:**
+```bash
+# Find process using port 8000
+lsof -i :8000
+# Kill the process
+kill -9 <PID>
 ```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Implement changes with tests
-4. Submit a pull request
+1. **Fork the repository**
+2. **Create a feature branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Make your changes**
+   - Follow PEP 8 style guidelines
+   - Add tests for new functionality
+   - Update documentation as needed
+4. **Test your changes**
+   ```bash
+   python test.py
+   # Test with HTML interfaces
+   ```
+5. **Submit a pull request**
+   - Provide clear description of changes
+   - Include screenshots for UI changes
+   - Reference any related issues
+
+### Code Style Guidelines
+
+- Follow PEP 8 for Python code
+- Use type hints where possible
+- Add docstrings for functions and classes
+- Keep functions focused and small
+- Use meaningful variable names
 
 ## License
 
 This project is licensed under the MIT License.
 
+## Performance Optimization
+
+### For Production
+
+1. **Database Optimization:**
+   - Use connection pooling
+   - Add database indexes for frequently queried fields
+   - Consider read replicas for analytics
+
+2. **Pose Tracking Optimization:**
+   - Adjust MediaPipe model complexity based on hardware
+   - Use frame skipping for lower-end devices
+   - Implement pose caching for reference templates
+
+3. **API Performance:**
+   - Enable response compression
+   - Use Redis for session caching
+   - Implement rate limiting
+
+## Security Considerations
+
+- **Authentication:** JWT tokens with proper expiration
+- **Data Protection:** Encrypt sensitive patient data
+- **API Security:** Input validation and sanitization
+- **File Uploads:** Validate and scan uploaded files
+- **Database:** Use parameterized queries to prevent SQL injection
+
+## Monitoring and Logging
+
+```python
+# Add to main.py for basic logging
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Log important events
+logger.info("Session started for patient {patient_id}")
+logger.error("Pose tracking failed: {error}")
+```
+
 ## Support
 
 For technical support or questions:
-- Create an issue in the repository
-- Contact the development team
-- Check the API documentation at `/docs`
+
+- **Documentation:** Check the API documentation at `/docs`
+- **Issues:** Create an issue in the repository with:
+  - Clear description of the problem
+  - Steps to reproduce
+  - System information (OS, Python version, etc.)
+  - Error logs if applicable
+- **Community:** Join our community discussions
+- **Professional Support:** Contact the development team for enterprise support
+
+## Roadmap
+
+### Upcoming Features
+
+- [ ] Mobile app integration
+- [ ] Advanced AI exercise recommendations
+- [ ] Multi-language support
+- [ ] Telehealth video consultations
+- [ ] Wearable device integration
+- [ ] Advanced analytics dashboard
+- [ ] Exercise library expansion
+
+### Version History
+
+- **v1.0.0** - Initial release with basic pose tracking
+- **v1.1.0** - Added rep analysis and stability assessment
+- **v1.2.0** - Enhanced template system and testing interfaces
+- **Current** - Modular architecture and subscription management

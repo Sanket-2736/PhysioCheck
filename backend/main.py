@@ -1,6 +1,6 @@
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import threading
@@ -13,8 +13,52 @@ from pose.pose_tracking_patient import run_exercise_session
 from database.connection import get_db
 from database.models import Exercise, ExercisePreset, Session, SessionProgress, SessionResult
 
-
-app = FastAPI()
+# FastAPI app with enhanced documentation
+app = FastAPI(
+    title="PhysioCheck Backend API",
+    description="""
+    ## PhysioCheck - AI-Powered Physiotherapy Monitoring System
+    
+    A comprehensive physiotherapy monitoring system that uses computer vision and pose estimation 
+    to track patient exercises in real-time. Built with FastAPI, MediaPipe, and MySQL.
+    
+    ### Key Features:
+    - **Real-time Pose Tracking**: Uses MediaPipe for accurate body pose estimation
+    - **Exercise Management**: Physicians can create custom exercises with specific rules
+    - **Session Monitoring**: Real-time tracking of patient exercise sessions
+    - **Quality Assessment**: Automated scoring based on form, alignment, and completion
+    - **Role-based Access**: Separate interfaces for physicians, patients, and administrators
+    
+    ### Authentication:
+    Most endpoints require authentication. Use the `/auth/login` endpoint to obtain a JWT token,
+    then include it in the Authorization header as `Bearer <token>`.
+    
+    ### Getting Started:
+    1. Register as a patient or physician using `/auth/register` or `/auth/register-physician`
+    2. Login to get your access token
+    3. Explore the available exercises with `/exercises`
+    4. Start a session with `/start-session`
+    """,
+    version="1.2.0",
+    contact={
+        "name": "PhysioCheck Development Team",
+        "email": "support@physiocheck.com",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    servers=[
+        {
+            "url": "http://localhost:8000",
+            "description": "Development server"
+        },
+        {
+            "url": "https://api.physiocheck.com",
+            "description": "Production server"
+        }
+    ]
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -284,6 +328,131 @@ async def get_session_status(session_id: str, db: AsyncSession = Depends(get_db)
         "final": final_result.summary if final_result else None
     }
 
+# ---------------------------------------------------
+# DOCUMENTATION AND INFO ROUTES
+# ---------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """
+    Root endpoint with API information and documentation links.
+    """
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>PhysioCheck Backend API</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+            .links { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 30px 0; }
+            .link-card { background: #ecf0f1; padding: 20px; border-radius: 8px; text-align: center; text-decoration: none; color: #2c3e50; transition: transform 0.2s; }
+            .link-card:hover { transform: translateY(-2px); background: #d5dbdb; }
+            .status { background: #2ecc71; color: white; padding: 10px; border-radius: 5px; text-align: center; margin: 20px 0; }
+            .feature { background: #3498db; color: white; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🏥 PhysioCheck Backend API</h1>
+            <div class="status">✅ API is running successfully!</div>
+            
+            <p>Welcome to the PhysioCheck Backend API - an AI-powered physiotherapy monitoring system that uses computer vision and pose estimation to track patient exercises in real-time.</p>
+            
+            <div class="links">
+                <a href="/docs" class="link-card">
+                    <h3>📚 Interactive API Docs</h3>
+                    <p>Swagger UI with live API testing</p>
+                </a>
+                <a href="/redoc" class="link-card">
+                    <h3>📖 Alternative Docs</h3>
+                    <p>ReDoc documentation interface</p>
+                </a>
+                <a href="/exercises" class="link-card">
+                    <h3>🏃‍♂️ Available Exercises</h3>
+                    <p>List all available exercises</p>
+                </a>
+                <a href="/video-feed" class="link-card">
+                    <h3>📹 Live Camera Feed</h3>
+                    <p>Real-time pose tracking stream</p>
+                </a>
+            </div>
+            
+            <h2>🚀 Key Features</h2>
+            <div class="feature">Real-time Pose Tracking with MediaPipe</div>
+            <div class="feature">Custom Exercise Creation for Physicians</div>
+            <div class="feature">Live Session Monitoring & Quality Assessment</div>
+            <div class="feature">Role-based Access Control</div>
+            
+            <h2>🔗 Quick Links</h2>
+            <ul>
+                <li><strong>Health Check:</strong> <code>GET /health</code></li>
+                <li><strong>Login:</strong> <code>POST /auth/login</code></li>
+                <li><strong>Register Patient:</strong> <code>POST /auth/register</code></li>
+                <li><strong>Register Physician:</strong> <code>POST /auth/register-physician</code></li>
+            </ul>
+            
+            <p><small>Version 1.2.0 | Built with FastAPI, MediaPipe & MySQL</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint to verify API status.
+    """
+    return {
+        "status": "healthy",
+        "service": "PhysioCheck Backend API",
+        "version": "1.2.0",
+        "timestamp": "2024-12-18T10:00:00Z"
+    }
+
+@app.get("/api-info")
+async def api_info():
+    """
+    Get API information and available endpoints.
+    """
+    return {
+        "name": "PhysioCheck Backend API",
+        "version": "1.2.0",
+        "description": "AI-powered physiotherapy monitoring system",
+        "documentation": {
+            "swagger_ui": "/docs",
+            "redoc": "/redoc",
+            "openapi_json": "/openapi.json"
+        },
+        "key_endpoints": {
+            "authentication": ["/auth/login", "/auth/register", "/auth/register-physician"],
+            "exercises": ["/exercises", "/exercise/{id}"],
+            "sessions": ["/start-session", "/session/{id}"],
+            "streaming": ["/video-feed"],
+            "health": ["/health", "/"]
+        },
+        "features": [
+            "Real-time pose tracking",
+            "Exercise management",
+            "Session monitoring",
+            "Quality assessment",
+            "Role-based access"
+        ]
+    }
+
+# Redirect common documentation paths
+@app.get("/documentation")
+async def redirect_to_docs():
+    """Redirect to main documentation."""
+    return RedirectResponse(url="/docs")
+
+@app.get("/api")
+async def redirect_to_api_info():
+    """Redirect to API information."""
+    return RedirectResponse(url="/api-info")
+
 from database.connection import engine, Base
 
 @app.on_event("startup")
@@ -294,3 +463,10 @@ async def startup():
 
 # To run the app:
 # python -m uvicorn main:app --reload
+# 
+# Available documentation routes:
+# - http://localhost:8000/ (Landing page with links)
+# - http://localhost:8000/docs (Swagger UI)
+# - http://localhost:8000/redoc (ReDoc)
+# - http://localhost:8000/health (Health check)
+# - http://localhost:8000/api-info (API information)
