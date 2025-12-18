@@ -1,10 +1,11 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database.connection import get_db
-from database.models import AuditLog, User, Physician, Patient, RehabPlan, Session
+from database.models import AuditLog, User, Physician, Patient, RehabPlan, Session, ExerciseSession
 from routers.auth_router import require_admin, require_role
 from services.admin_service import AdminService
 from services.audit_service import AuditService
@@ -233,6 +234,88 @@ async def enable_user(
     )
 
     return {"success": True}
+
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+
+@router.get("/analytics/physicians")
+async def physician_analytics(
+    user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    physicians = (
+        await db.execute(
+            select(Physician)
+            .options(selectinload(Physician.user))
+        )
+    ).scalars().all()
+
+    analytics = []
+
+    for p in physicians:
+        # ✅ Patient count (correct)
+        patient_count = (
+            await db.execute(
+                select(func.count(Patient.user_id))
+                .where(Patient.physician_id == p.user_id)
+            )
+        ).scalar() or 0
+
+        # ✅ Sessions from ExerciseSession (CORRECT TABLE)
+        sessions = (
+            await db.execute(
+                select(ExerciseSession)
+                .where(ExerciseSession.physician_id == p.user_id)
+            )
+        ).scalars().all()
+
+        completed_sessions = [
+            s for s in sessions if s.completed_reps is not None
+        ]
+
+        analytics.append({
+            "physician_id": p.user_id,
+            "physician_name": p.user.full_name,
+            "total_patients": patient_count,
+            "total_sessions": len(sessions),
+            "completed_sessions": len(completed_sessions),
+            "completion_rate": (
+                (len(completed_sessions) / len(sessions)) * 100
+                if sessions else 0
+            )
+        })
+
+    return {
+        "success": True,
+        "analytics": analytics
+    }
+
+@router.get("/reports/physician/{user_id}")
+async def physician_report(
+    user_id: int,
+    user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    # ✅ Use ExerciseSession (NOT Session)
+    sessions = (
+        await db.execute(
+            select(ExerciseSession)
+            .where(ExerciseSession.physician_id == user_id)
+        )
+    ).scalars().all()
+
+    completed_sessions = [
+        s for s in sessions if s.completed_reps is not None
+    ]
+
+    return {
+        "success": True,
+        "physician_id": user_id,
+        "total_sessions": len(sessions),
+        "completed_sessions": len(completed_sessions),
+        "generated_at": datetime.utcnow()
+    }
+
 
 @router.get("/users")
 async def get_all_patients(

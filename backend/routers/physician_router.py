@@ -12,7 +12,7 @@ router = APIRouter(prefix="/patient", tags=["Patient"])
 
 
 from sqlalchemy.future import select
-from database.models import PatientExercise
+from database.models import PatientExercise, Physician
 
 @router.post("/session/{session_id}/frame")
 async def live_feedback(
@@ -114,4 +114,31 @@ async def get_patient_report(
             patient_id=user["user_id"],
             db=db
         )
+    }
+
+@router.get("/")
+async def get_all_physicians(
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(select(Physician))
+    physicians = q.scalars().all()
+
+    return {
+        "success": True,
+        "count": len(physicians),
+        "physicians": [
+            {
+                "physician_id": p.user_id,
+                "full_name": p.user.full_name,
+                "email": p.user.email,
+                "phone": p.user.phone,
+                "profile_photo": p.profile_photo,
+                "specialization": p.specialization,
+                "license_id": p.license_id,
+                "years_experience": p.years_experience,
+                "is_verified": p.is_verified,
+                "created_at": p.user.created_at
+            }
+            for p in physicians
+        ]
     }

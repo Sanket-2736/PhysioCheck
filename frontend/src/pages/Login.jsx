@@ -37,7 +37,7 @@ export default function Login() {
       setTimeout(() => {
         if (role === "admin") return navigate('/admin');
         else if (role === "physician") return navigate('/physician');
-        else return navigate('/dashboard');
+        else return navigate('/patient');
       }, 800);
     } catch (err) {
       const msg =

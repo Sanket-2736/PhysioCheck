@@ -77,7 +77,9 @@ from routers.subscription_router import router as subscription_router
 from routers.physician_router import router as physician_router
 from routers.patient_router import router as patient_router
 from routers.patient_exercises_router import router as patient_exercises_router
+from routers.subscription_request_router import router as subscription_request_router
 
+app.include_router(subscription_request_router)
 app.include_router(patient_exercises_router)
 app.include_router(patient_router)
 app.include_router(physician_router)

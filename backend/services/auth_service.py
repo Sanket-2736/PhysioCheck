@@ -174,50 +174,95 @@ class AuthService:
         if not user or not verify_password(payload["password"], user.password_hash):
             raise HTTPException(status_code=400, detail="Invalid email or password")
 
+        # Get role
         role_q = await db.execute(select(Role).where(Role.id == user.role_id))
         role = role_q.scalar_one_or_none()
+        role_name = role.name if role else "unknown"
 
-        if not user.is_active:
-            raise HTTPException(403, "Account suspended")
+        # ---------------- ROLE CHECKS ----------------
+        if role_name == "patient":
+            pq = await db.execute(
+                select(Patient).where(Patient.user_id == user.id)
+            )
+            patient = pq.scalar_one_or_none()
 
+            if patient and not patient.is_active:
+                raise HTTPException(403, "Patient account is disabled")
 
+        elif role_name == "physician":
+            pq = await db.execute(
+                select(Physician).where(Physician.user_id == user.id)
+            )
+            physician = pq.scalar_one_or_none()
+
+            if physician and not physician.is_verified:
+                raise HTTPException(403, "Physician not approved yet")
+
+        # admins → no restriction
+
+        # Create token
         token = create_access_token({
             "user_id": user.id,
-            "role": role.name if role else "unknown"
+            "role": role_name
         })
 
         return {
             "access_token": token,
             "token_type": "bearer",
             "user_id": user.id,
-            "role": role.name if role else "unknown"
+            "role": role_name
         }
+
 
     # -------------------------------------------------------
     # ME
     # -------------------------------------------------------
     @staticmethod
-    async def me(user_id: int, db: AsyncSession) -> Dict[str, Any]:
+    async def me(user_id: int, db: AsyncSession):
 
+        # Fetch user
         q = await db.execute(select(User).where(User.id == user_id))
         user = q.scalar_one_or_none()
 
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Return role name instead of role_id
+        # Fetch role
         role_q = await db.execute(select(Role).where(Role.id == user.role_id))
         role = role_q.scalar_one_or_none()
+        role_name = role.name if role else None
 
-        return {
+        response = {
             "id": user.id,
             "email": user.email,
             "full_name": user.full_name,
             "phone": user.phone,
             "role_id": user.role_id,
-            "role": role.name if role else None,
-            "created_at": user.created_at
+            "role": role_name,
+            "created_at": user.created_at,
         }
+
+        # 👤 If patient → include patient profile
+        if role_name == "patient":
+            pq = await db.execute(
+                select(Patient).where(Patient.user_id == user.id)
+            )
+            patient = pq.scalar_one_or_none()
+
+            if patient:
+                response.update({
+                    "profile_photo": patient.profile_photo,
+                    "age": patient.age,
+                    "gender": patient.gender,
+                    "height_cm": patient.height_cm,
+                    "weight_kg": patient.weight_kg,
+                    "address": patient.address,
+                    "injury_description": patient.injury_description,
+                    "goals": patient.goals,
+                })
+
+        return response
+
     
     @staticmethod
     async def login_admin(payload, db: AsyncSession):

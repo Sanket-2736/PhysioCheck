@@ -375,3 +375,17 @@ class AuditLog(Base):
     target_id = Column(Integer, nullable=False)
     description = Column(String(255))
     created_at = Column(DateTime, server_default=func.now())
+
+class SubscriptionRequest(Base):
+    __tablename__ = "subscription_requests"
+
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey("patients.user_id"), nullable=False)
+    physician_id = Column(Integer, ForeignKey("physicians.user_id"), nullable=False)
+
+    status = Column(
+        String(20),
+        default="PENDING"  # PENDING | ACCEPTED | REJECTED
+    )
+
+    created_at = Column(DateTime, server_default=func.now())
