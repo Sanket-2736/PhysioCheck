@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 
-export default function PhysicianProfile() {
+export default function PatientPhysicianProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
 

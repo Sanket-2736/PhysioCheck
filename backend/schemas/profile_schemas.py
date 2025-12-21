@@ -1,7 +1,13 @@
 from pydantic import BaseModel
 from typing import Optional
 
-
+class PhysicianProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    specialization: Optional[str] = None
+    license_id: Optional[str] = None
+    years_experience: Optional[int] = None
+    
 class PatientProfileUpdate(BaseModel):
     full_name: Optional[str]
     age: Optional[int]

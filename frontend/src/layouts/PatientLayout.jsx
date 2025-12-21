@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   User,
   Activity,
+  Users,
   LogOut
 } from "lucide-react";
 import { useAuthPatient } from "../context/AuthPatientContext";
@@ -11,7 +12,7 @@ export default function PatientLayout() {
   const { patient, loading, logout } = useAuthPatient();
   const navigate = useNavigate();
 
-  // ⏳ WAIT until auth check finishes
+  // ⏳ Wait for auth check
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
@@ -20,7 +21,7 @@ export default function PatientLayout() {
     );
   }
 
-  // 🚫 Redirect ONLY after loading
+  // 🚫 Redirect if not authenticated
   if (!patient) {
     return <Navigate to="/login" replace />;
   }
@@ -54,18 +55,24 @@ export default function PatientLayout() {
           />
 
           <SidebarLink
+            to="rehab-plan"
+            icon={<Activity size={20} />}
+            label="My Rehab Plan"
+          />
+
+          <SidebarLink
+            to="physicians"
+            icon={<Users size={20} />}
+            label="Physicians"
+          />
+
+          <SidebarLink
             to="me"
             icon={<User size={20} />}
             label="My Profile"
           />
 
-          <SidebarLink
-            to="sessions"
-            icon={<Activity size={20} />}
-            label="My Sessions"
-          />
-
-          {/* 🔴 Logout inside sidebar */}
+          {/* Logout */}
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-slate-700 hover:text-red-300 transition"

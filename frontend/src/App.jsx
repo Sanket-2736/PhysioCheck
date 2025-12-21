@@ -21,28 +21,31 @@ import AdminLogin from "./pages/admin/AdminLogin";
 
 /* ================= PATIENT ================= */
 
-// 🔐 Patient auth + layout
 import { AuthPatientProvider } from "./context/AuthPatientContext";
 import PatientLayout from "./layouts/PatientLayout";
 
-// 👤 Patient pages
 import PatientDashboard from "./pages/patient/PatientDashboard";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PhysicianList from "./pages/patient/PhysicianList";
-import PhysicianProfile from "./pages/patient/PhysicianProfile";
+import PatientPhysicianProfile from "./pages/patient/PatientPhysicianProfile";
 
 /* ================= PHYSICIAN ================= */
 
 // 🔐 Physician auth + layout
 import { AuthPhysicianProvider } from "./context/AuthPhysicianContext";
 import { PhysicianNotificationProvider } from "./context/PhysicianNotificationContext";
-import PhysicianLayout from "./layouts/PhysicianLayout";
 
 // 👨‍⚕️ Physician pages
 import PhysicianDashboard from "./pages/physician/PhysicianDashboard";
+import PhysicianPatientProfile from "./pages/physician/PhysicianPatientProfile";
 import PhysicianPatients from "./pages/physician/PhysicianPatients";
 import PhysicianRequests from "./pages/physician/PhysicianRequests";
-
+import PhysicianProfile from "./pages/physician/PhysicianProfile";
+import PhysicianLayout from "./layouts/PhysicianLayout";
+import MyExercises from "./pages/physician/MyExercises";
+import ExerciseCapture from "./pages/physician/ExerciseCapture";
+import PatientRehabPlan from "./pages/patient/PatientRehabPlan";
+import PatientExerciseSession from "./pages/patient/PatientExerciseSession";
 function App() {
   return (
     <Routes>
@@ -66,6 +69,10 @@ function App() {
         <Route path="physicians" element={<AdminPhysicians />} />
         <Route path="physicians/:id" element={<AdminPhysicianProfile />} />
         <Route
+          path="rehab-plan/:patientExerciseId/start"
+          element={<PatientExerciseSession />}
+        />
+        <Route
           path="physicians/:id/patients"
           element={<AdminPhysicianPatients />}
         />
@@ -83,9 +90,12 @@ function App() {
         }
       >
         <Route index element={<PatientDashboard />} />
+        <Route path="rehab-plan" element={<PatientRehabPlan />} />
         <Route path="me" element={<PatientProfile />} />
         <Route path="physicians" element={<PhysicianList />} />
-        <Route path="physicians/:id" element={<PhysicianProfile />} />
+        <Route path="physicians/:id" element={<PatientPhysicianProfile />} />
+        <Route path="physicians" element={<PhysicianList />} />
+
       </Route>
 
       {/* ================= PHYSICIAN ================= */}
@@ -101,8 +111,16 @@ function App() {
       >
         <Route index element={<PhysicianDashboard />} />
         <Route path="patients" element={<PhysicianPatients />} />
+        <Route path="patients/:id" element={<PhysicianPatientProfile />} />
         <Route path="requests" element={<PhysicianRequests />} />
+        <Route path="me" element={<PhysicianProfile />} />
+        <Route path="exercises" element={<MyExercises />} />
+        <Route
+          path="exercises/:exerciseId/capture"
+          element={<ExerciseCapture />}
+        />
       </Route>
+
     </Routes>
   );
 }

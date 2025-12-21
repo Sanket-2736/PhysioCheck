@@ -1,10 +1,26 @@
-# PhysioCheck Backend
+# PhysioCheck - Full-Stack Physiotherapy Monitoring System
 
-A comprehensive physiotherapy monitoring system that uses computer vision and pose estimation to track patient exercises in real-time. Built with FastAPI, MediaPipe, and MySQL.
+A comprehensive physiotherapy monitoring system that uses computer vision and pose estimation to track patient exercises in real-time. Built with FastAPI backend, React frontend, MediaPipe, and MySQL.
 
 ## Overview
 
-PhysioCheck enables physicians to create custom exercise protocols and monitor patient rehabilitation sessions through AI-powered pose tracking. The system provides real-time feedback, quality scoring, and detailed analytics for physiotherapy sessions.
+PhysioCheck is a full-stack application that enables physicians to create custom exercise protocols and monitor patient rehabilitation sessions through AI-powered pose tracking. The system provides real-time feedback, quality scoring, and detailed analytics for physiotherapy sessions across web and mobile platforms.
+
+## Architecture
+
+```
+PhysioCheck/
+├── backend/           # FastAPI REST API server
+│   ├── AI/ML pose tracking with MediaPipe
+│   ├── Database management with SQLAlchemy
+│   ├── Authentication & authorization
+│   └── Real-time session monitoring
+└── frontend/          # React web application
+    ├── Role-based dashboards (Admin, Physician, Patient)
+    ├── Real-time pose tracking interface
+    ├── Exercise management & session monitoring
+    └── Responsive UI with Tailwind CSS
+```
 
 ## Key Features
 
@@ -24,95 +40,129 @@ PhysioCheck enables physicians to create custom exercise protocols and monitor p
 
 ## Tech Stack
 
-- **Backend**: FastAPI (Python)
-- **Database**: MySQL with SQLAlchemy ORM
+### Backend
+- **Framework**: FastAPI (Python)
+- **Database**: MySQL with SQLAlchemy ORM (async)
 - **Computer Vision**: MediaPipe, OpenCV
-- **Authentication**: JWT tokens
+- **Authentication**: JWT tokens with bcrypt
 - **File Storage**: Cloudinary
 - **Email**: SMTP integration
+- **API Documentation**: Swagger UI, ReDoc
+
+### Frontend
+- **Framework**: React 19.2.0
+- **Build Tool**: Vite 7.2.4
+- **Styling**: Tailwind CSS 4.1.18
+- **Routing**: React Router DOM 7.10.1
+- **HTTP Client**: Axios 1.13.2
+- **Pose Tracking**: MediaPipe Camera & Drawing Utils
+- **UI Components**: Lucide React (icons)
+- **Notifications**: React Toastify
+- **State Management**: React Context API
 
 ## Project Structure
 
 ```
-backend/
-├── main.py                 # FastAPI application entry point
-├── .env                   # Environment configuration
-├── pose_tracking_patient.py    # Legacy patient tracking (moved to pose/)
-├── pose_tracking_physician.py  # Legacy physician tracking (moved to pose/)
-├── test.py                # Testing utilities
-├── database/
-│   ├── connection.py      # Database connection setup
-│   └── models.py          # SQLAlchemy models
-├── pose/                  # Enhanced pose tracking modules
-│   ├── main.py           # Standalone pose tracking server
-│   ├── pose_tracking_patient.py    # Patient session tracking
-│   ├── pose_tracking_physician.py  # Physician pose capture
-│   ├── rep_analysis.py   # Repetition detection algorithms
-│   └── stability_analysis.py      # Movement stability assessment
-├── routers/
-│   ├── auth_router.py     # Authentication endpoints
-│   ├── exercises_router.py # Exercise management
-│   ├── sessions_router.py  # Session tracking
-│   ├── rehab_router.py    # Rehabilitation plans
-│   ├── rehab_plan_router.py # Detailed rehab plan management
-│   ├── profile_router.py  # User profiles
-│   ├── admin_router.py    # Admin functions
-│   ├── physician_router.py # Physician-specific endpoints
-│   └── subscription_router.py # Patient-physician subscriptions
-├── services/              # Business logic layer
-│   ├── auth_service.py    # Authentication logic
-│   ├── exercises_service.py # Exercise management
-│   ├── sessions_service.py # Session handling
-│   ├── rehab_service.py   # Rehabilitation plans
-│   ├── rehab_plan_service.py # Advanced rehab planning
-│   ├── profile_service.py # User profile management
-│   ├── admin_service.py   # Admin operations
-│   ├── subscription_service.py # Subscription management
-│   ├── pose_template_service.py # Pose template handling
-│   ├── exercise_rule_service.py # Exercise rule generation
-│   └── rep_capture_service.py   # Rep analysis and capture
-├── schemas/               # Pydantic models
-│   ├── auth_schemas.py    # Authentication schemas
-│   ├── exercise_schemas.py # Exercise-related schemas
-│   ├── profile_schemas.py # Profile schemas
-│   ├── subscription_schema.py # Subscription schemas
-│   ├── pose_template_schema.py # Pose template schemas
-│   └── rep_capture_schema.py   # Rep capture schemas
-├── utils/                 # Utility functions
-│   ├── security.py       # Security utilities
-│   ├── cloudinary.py     # File upload handling
-│   └── email_utils.py    # Email functionality
-└── tests/                # Testing and demo files
-    ├── test.html         # Frontend pose tracking demo
-    ├── test2.html        # Additional test interface
-    └── test_capture.html # Pose capture testing
+PhysioCheck/
+├── README.md              # This comprehensive guide
+├── .gitignore            # Git ignore rules
+├── backend/              # FastAPI backend server
+│   ├── main.py           # FastAPI application entry point
+│   ├── .env              # Backend environment configuration
+│   ├── pose_tracking_patient.py    # Legacy patient tracking (moved to pose/)
+│   ├── pose_tracking_physician.py  # Legacy physician tracking (moved to pose/)
+│   ├── test.py           # Testing utilities
+│   ├── database/
+│   │   ├── connection.py # Database connection setup
+│   │   └── models.py     # SQLAlchemy models
+│   ├── pose/             # Enhanced pose tracking modules
+│   │   ├── main.py       # Standalone pose tracking server
+│   │   ├── pose_tracking_patient.py    # Patient session tracking
+│   │   ├── pose_tracking_physician.py  # Physician pose capture
+│   │   ├── rep_analysis.py   # Repetition detection algorithms
+│   │   └── stability_analysis.py      # Movement stability assessment
+│   ├── routers/          # API route handlers
+│   │   ├── auth_router.py     # Authentication endpoints
+│   │   ├── exercises_router.py # Exercise management
+│   │   ├── sessions_router.py  # Session tracking
+│   │   ├── rehab_router.py    # Rehabilitation plans
+│   │   ├── profile_router.py  # User profiles
+│   │   ├── admin_router.py    # Admin functions
+│   │   ├── physician_router.py # Physician-specific endpoints
+│   │   └── subscription_router.py # Patient-physician subscriptions
+│   ├── services/         # Business logic layer
+│   │   ├── auth_service.py    # Authentication logic
+│   │   ├── exercises_service.py # Exercise management
+│   │   ├── sessions_service.py # Session handling
+│   │   ├── profile_service.py # User profile management
+│   │   ├── subscription_service.py # Subscription management
+│   │   ├── pose_template_service.py # Pose template handling
+│   │   ├── exercise_rule_service.py # Exercise rule generation
+│   │   └── rep_capture_service.py   # Rep analysis and capture
+│   ├── schemas/          # Pydantic models for API validation
+│   ├── utils/            # Utility functions
+│   │   ├── security.py   # Security utilities
+│   │   ├── cloudinary.py # File upload handling
+│   │   └── email_utils.py # Email functionality
+│   └── tests/            # Testing and demo files
+│       ├── test.html     # Frontend pose tracking demo
+│       ├── test2.html    # Additional test interface
+│       └── test_capture.html # Pose capture testing
+└── frontend/             # React web application
+    ├── package.json      # Frontend dependencies
+    ├── vite.config.js    # Vite build configuration
+    ├── .env              # Frontend environment variables
+    ├── index.html        # Main HTML template
+    ├── src/
+    │   ├── main.jsx      # React application entry point
+    │   ├── App.jsx       # Main application component with routing
+    │   ├── api/
+    │   │   └── axios.js  # API client configuration
+    │   ├── components/   # Reusable React components
+    │   ├── context/      # React Context providers
+    │   │   ├── AuthAdminContext.jsx    # Admin authentication
+    │   │   ├── AuthPatientContext.jsx  # Patient authentication
+    │   │   ├── AuthPhysicianContext.jsx # Physician authentication
+    │   │   └── AppContext.jsx          # Global app state
+    │   ├── layouts/      # Layout components
+    │   │   ├── AdminLayout.jsx    # Admin dashboard layout
+    │   │   ├── PatientLayout.jsx  # Patient dashboard layout
+    │   │   └── PhysicianLayout.jsx # Physician dashboard layout
+    │   └── pages/        # Page components
+    │       ├── admin/    # Admin dashboard pages
+    │       ├── patient/  # Patient dashboard pages
+    │       ├── physician/ # Physician dashboard pages
+    │       ├── Login.jsx # Authentication page
+    │       └── Signup.jsx # User registration page
+    └── public/           # Static assets
 ```
 
 ## Installation
 
 ### Prerequisites
 
-- **Python 3.8+** (3.9+ recommended)
+- **Python 3.8+** (3.9+ recommended) for backend
+- **Node.js 18+** and **npm/yarn** for frontend
 - **MySQL 8.0+** or compatible database
 - **Webcam** for pose tracking functionality
 - **Git** for version control
-- **Node.js** (optional, for frontend development)
 
-### Setup
+### Backend Setup
 
 1. **Clone the repository**
 ```bash
 git clone <repository-url>
-cd backend
+cd PhysioCheck
 ```
 
 2. **Create virtual environment (recommended)**
 ```bash
+cd backend
 python -m venv physiocheck-env
 source physiocheck-env/bin/activate  # On Windows: physiocheck-env\Scripts\activate
 ```
 
-3. **Install dependencies**
+3. **Install backend dependencies**
 ```bash
 pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudinary python-multipart python-jose bcrypt
 ```
@@ -122,7 +172,7 @@ pip install fastapi uvicorn sqlalchemy aiomysql mediapipe opencv-python cloudina
 pip install -r requirements.txt
 ```
 
-4. **Configure environment variables**
+4. **Configure backend environment variables**
 Create a `.env` file in the `backend/` directory with:
 ```env
 # Database
@@ -155,7 +205,7 @@ The application will automatically create tables on startup, or you can run:
 python -c "from database.connection import engine, Base; import asyncio; asyncio.run(engine.begin().run_sync(Base.metadata.create_all))"
 ```
 
-7. **Run the application**
+7. **Run the backend server**
 
 **Main Application:**
 ```bash
@@ -169,8 +219,73 @@ python -m uvicorn main:app --reload --port 8001
 ```
 
 The main API will be available at `http://localhost:8000`
+The pose tracking server will be available at `http://localhost:8001`
 
-8. **Test the system**
+### Frontend Setup
+
+1. **Navigate to frontend directory**
+```bash
+cd ../frontend  # From backend directory
+# or
+cd frontend     # From project root
+```
+
+2. **Install frontend dependencies**
+```bash
+npm install
+# or
+yarn install
+```
+
+3. **Configure frontend environment variables**
+Create a `.env` file in the `frontend/` directory with:
+```env
+VITE_BACKEND_URL=http://localhost:8000
+```
+
+4. **Run the frontend development server**
+```bash
+npm run dev
+# or
+yarn dev
+```
+
+The frontend will be available at `http://localhost:5173`
+
+5. **Build for production**
+```bash
+npm run build
+# or
+yarn build
+```
+
+The production build will be in the `dist/` directory.
+
+### Full-Stack Development
+
+To run both backend and frontend simultaneously:
+
+**Terminal 1 (Backend):**
+```bash
+cd backend
+python -m uvicorn main:app --reload
+```
+
+**Terminal 2 (Frontend):**
+```bash
+cd frontend
+npm run dev
+```
+
+**Terminal 3 (Optional - Standalone Pose Server):**
+```bash
+cd backend/pose
+python -m uvicorn main:app --reload --port 8001
+```
+
+### Testing the Full Stack
+
+8. **Test the backend API**
 
 **API Documentation & Landing Page:**
 - Visit `http://localhost:8000/` for the main landing page with all documentation links
@@ -196,6 +311,65 @@ curl http://localhost:8000/exercises
 # Get API information
 curl http://localhost:8000/api-info
 ```
+
+9. **Test the frontend application**
+
+- Visit `http://localhost:5173/` for the main application
+- Test user registration and login
+- Navigate through different role-based dashboards:
+  - **Admin**: `http://localhost:5173/admin`
+  - **Physician**: `http://localhost:5173/physician`
+  - **Patient**: `http://localhost:5173/patient`
+
+## Frontend Features & User Roles
+
+### Admin Dashboard
+- **User Management**: View and manage all users (patients and physicians)
+- **Physician Verification**: Approve or reject physician registrations
+- **Audit Logs**: Monitor system activities and user actions
+- **Analytics**: View system-wide statistics and performance metrics
+- **Patient-Physician Relationships**: Manage subscriptions and assignments
+
+### Physician Dashboard
+- **Patient Management**: View assigned patients and their progress
+- **Exercise Creation**: Create custom exercises with pose tracking rules
+- **Exercise Capture**: Record reference poses using webcam
+- **Rehabilitation Plans**: Design personalized rehab programs for patients
+- **Subscription Requests**: Review and approve patient subscription requests
+- **Session Monitoring**: Track patient exercise sessions in real-time
+- **Profile Management**: Update credentials and specialization
+
+### Patient Dashboard
+- **Physician Discovery**: Browse and subscribe to physicians
+- **Rehabilitation Plan**: View assigned exercises and progress
+- **Exercise Sessions**: Perform exercises with real-time pose tracking feedback
+- **Progress Tracking**: Monitor performance metrics and quality scores
+- **Session History**: Review past exercise sessions and improvements
+- **Profile Management**: Update personal information and goals
+
+## Frontend-Backend Integration
+
+### API Communication
+- **Axios Client**: Centralized API client with automatic JWT token injection
+- **Base URL**: Configured via `VITE_BACKEND_URL` environment variable
+- **Authentication**: JWT tokens stored in localStorage
+- **Request Interceptors**: Automatic authorization header attachment
+- **Error Handling**: Centralized error handling with toast notifications
+
+### Real-Time Features
+- **Pose Tracking**: MediaPipe integration for client-side pose detection
+- **Video Streaming**: Real-time camera feed processing
+- **Session Updates**: Live progress updates during exercise sessions
+- **Notifications**: React Toastify for user feedback
+
+### State Management
+- **Context API**: Role-based authentication contexts
+  - `AuthAdminContext`: Admin authentication state
+  - `AuthPatientContext`: Patient authentication state
+  - `AuthPhysicianContext`: Physician authentication state
+  - `AppContext`: Global application state
+- **Local Storage**: Persistent authentication tokens
+- **Protected Routes**: Role-based route protection
 
 ## API Documentation
 
@@ -463,7 +637,55 @@ The application includes comprehensive error handling:
 
 ### Docker Deployment
 
-**Dockerfile:**
+**Full-Stack Docker Compose:**
+```yaml
+version: '3.8'
+services:
+  # Backend API
+  physiocheck-backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+aiomysql://root:password@db:3306/physiocheck
+      - CLOUDINARY_CLOUD=${CLOUDINARY_CLOUD}
+      - CLOUDINARY_KEY=${CLOUDINARY_KEY}
+      - CLOUDINARY_SECRET=${CLOUDINARY_SECRET}
+    depends_on:
+      - db
+    volumes:
+      - /dev/video0:/dev/video0  # For webcam access
+    
+  # Frontend React App
+  physiocheck-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:8000
+    depends_on:
+      - physiocheck-backend
+    
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: physiocheck
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
+```
+
+**Backend Dockerfile:**
 ```dockerfile
 FROM python:3.9-slim
 
@@ -493,38 +715,65 @@ EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-**Docker Compose:**
-```yaml
-version: '3.8'
-services:
-  physiocheck-backend:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=mysql+aiomysql://root:password@db:3306/physiocheck
-    depends_on:
-      - db
-    volumes:
-      - /dev/video0:/dev/video0  # For webcam access
-    
-  db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: physiocheck
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
+**Frontend Dockerfile:**
+```dockerfile
+FROM node:18-alpine as build
 
-volumes:
-  mysql_data:
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy source code and build
+COPY . .
+RUN npm run build
+
+# Production stage
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 3000
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**Frontend nginx.conf:**
+```nginx
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    server {
+        listen 3000;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Handle React Router
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # API proxy (optional)
+        location /api/ {
+            proxy_pass http://physiocheck-backend:8000/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+}
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Backend Issues
 
 **Camera Access Issues:**
 ```bash
@@ -556,6 +805,59 @@ pip install mediapipe==0.8.11
 lsof -i :8000
 # Kill the process
 kill -9 <PID>
+```
+
+### Frontend Issues
+
+**Node.js Version Issues:**
+```bash
+# Check Node.js version (should be 18+)
+node --version
+
+# Update Node.js using nvm
+nvm install 18
+nvm use 18
+```
+
+**Dependency Installation Issues:**
+```bash
+# Clear npm cache
+npm cache clean --force
+
+# Delete node_modules and reinstall
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**Vite Build Issues:**
+```bash
+# Clear Vite cache
+rm -rf node_modules/.vite
+
+# Check for TypeScript errors
+npm run lint
+```
+
+**CORS Issues:**
+- Ensure backend CORS is configured to allow frontend origin
+- Check that `VITE_BACKEND_URL` matches the actual backend URL
+- Verify backend is running before starting frontend
+
+**MediaPipe Frontend Issues:**
+```bash
+# Ensure MediaPipe packages are installed
+npm list @mediapipe/pose @mediapipe/camera_utils @mediapipe/drawing_utils
+```
+
+**Frontend Port Issues:**
+```bash
+# Find process using port 5173
+lsof -i :5173
+# Kill the process
+kill -9 <PID>
+
+# Or use different port
+npm run dev -- --port 3000
 ```
 
 ## Contributing
@@ -648,17 +950,37 @@ For technical support or questions:
 
 ### Upcoming Features
 
-- [ ] Mobile app integration
+#### Backend Enhancements
 - [ ] Advanced AI exercise recommendations
-- [ ] Multi-language support
-- [ ] Telehealth video consultations
-- [ ] Wearable device integration
-- [ ] Advanced analytics dashboard
-- [ ] Exercise library expansion
+- [ ] Multi-language support for API responses
+- [ ] Wearable device integration (smartwatches, fitness trackers)
+- [ ] Advanced analytics dashboard with ML insights
+- [ ] Exercise library expansion with more movement types
+- [ ] Real-time collaboration features for physician-patient sessions
+
+#### Frontend Enhancements
+- [ ] **Mobile App**: React Native mobile application
+- [ ] **Progressive Web App (PWA)**: Offline capabilities and mobile optimization
+- [ ] **Real-time Notifications**: WebSocket integration for live updates
+- [ ] **Advanced UI/UX**: Enhanced animations and micro-interactions
+- [ ] **Accessibility**: WCAG 2.1 AA compliance
+- [ ] **Multi-language Support**: Internationalization (i18n)
+- [ ] **Dark Mode**: Theme switching capabilities
+- [ ] **Advanced Charts**: Interactive progress visualization
+- [ ] **Video Calling**: Telehealth integration for remote consultations
+
+#### Full-Stack Features
+- [ ] **Telehealth Integration**: Video consultations with pose tracking
+- [ ] **AI-Powered Insights**: Machine learning recommendations
+- [ ] **Social Features**: Patient community and support groups
+- [ ] **Gamification**: Achievement system and progress rewards
+- [ ] **Integration APIs**: Third-party fitness app connections
+- [ ] **Advanced Security**: Two-factor authentication, audit trails
 
 ### Version History
 
 - **v1.0.0** - Initial release with basic pose tracking
 - **v1.1.0** - Added rep analysis and stability assessment
 - **v1.2.0** - Enhanced template system and testing interfaces
-- **Current** - Modular architecture and subscription management
+- **v1.3.0** - Full-stack React frontend with role-based dashboards
+- **Current** - Modular architecture, subscription management, and comprehensive documentation

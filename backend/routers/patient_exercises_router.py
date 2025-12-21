@@ -11,6 +11,18 @@ router = APIRouter(
     tags=["Patient Exercises"]
 )
 
+@router.post("/{patient_exercise_id}/deassign")
+async def deassign_exercise(
+    patient_exercise_id: int,
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    return await PatientExerciseService.deassign_exercise(
+        physician_id=user["user_id"],
+        patient_exercise_id=patient_exercise_id,
+        db=db
+    )
+
 @router.post("/assign")
 async def assign_exercise(
     body: AssignExerciseRequest,

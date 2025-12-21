@@ -7,6 +7,7 @@
     video { width: 480px; border: 1px solid #ccc; }
     button { padding: 10px 16px; margin-top: 10px; }
     pre { background: #111; color: #0f0; padding: 10px; }
+    
   </style>
 </head>
 <body>
@@ -36,7 +37,7 @@ async function start() {
   stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
 
-  timer = setInterval(captureFrame, 100); // ~10 FPS
+  timer = setInterval(captureFrame, 100); 
   log("📸 Capturing frames...");
 }
 
@@ -47,7 +48,6 @@ function stop() {
 }
 
 function captureFrame() {
-  // 🔴 MOCK pose data (replace later with MediaPipe)
   frames.push({
     timestamp: Date.now() / 1000,
     joints: {

@@ -3,8 +3,11 @@ import {
   LayoutDashboard,
   Users,
   Bell,
-  LogOut
+  LogOut,
+  User,
+  Dumbbell
 } from "lucide-react";
+
 import { useAuthPhysician } from "../context/AuthPhysicianContext";
 import { usePhysicianNotifications } from "../context/PhysicianNotificationContext";
 
@@ -13,7 +16,7 @@ export default function PhysicianLayout() {
   const { pendingCount } = usePhysicianNotifications();
   const navigate = useNavigate();
 
-  // ⏳ WAIT until auth check finishes
+  // ⏳ Wait until auth check finishes
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
@@ -22,7 +25,7 @@ export default function PhysicianLayout() {
     );
   }
 
-  // 🚫 Redirect ONLY after loading
+  // 🚫 Redirect if not logged in
   if (!physician) {
     return <Navigate to="/login" replace />;
   }
@@ -34,7 +37,7 @@ export default function PhysicianLayout() {
 
   return (
     <div className="min-h-screen flex bg-slate-900 text-white">
-      {/* Sidebar */}
+      {/* ================= SIDEBAR ================= */}
       <aside className="w-64 bg-slate-800 p-6 flex flex-col">
         <h2
           className="text-2xl font-bold mb-10 cursor-pointer"
@@ -46,6 +49,7 @@ export default function PhysicianLayout() {
           </span>
         </h2>
 
+        {/* NAV LINKS */}
         <nav className="flex-1 space-y-2">
           <SidebarLink
             to="."
@@ -55,9 +59,22 @@ export default function PhysicianLayout() {
           />
 
           <SidebarLink
+            to="me"
+            icon={<User size={20} />}
+            label="My Profile"
+          />
+
+          <SidebarLink
             to="patients"
             icon={<Users size={20} />}
             label="My Patients"
+          />
+
+          {/* 🆕 MY EXERCISES */}
+          <SidebarLink
+            to="exercises"
+            icon={<Dumbbell size={20} />}
+            label="My Exercises"
           />
 
           <SidebarLink
@@ -68,6 +85,7 @@ export default function PhysicianLayout() {
           />
         </nav>
 
+        {/* LOGOUT */}
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 text-red-400 hover:text-red-300 mt-10"
@@ -77,6 +95,7 @@ export default function PhysicianLayout() {
         </button>
       </aside>
 
+      {/* ================= MAIN CONTENT ================= */}
       <main className="flex-1 p-8 overflow-y-auto">
         <Outlet />
       </main>

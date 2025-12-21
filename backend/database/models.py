@@ -128,7 +128,8 @@ class Exercise(Base):
     target_body_parts = Column(JSON)
     created_by = Column(Integer, ForeignKey("physicians.user_id"))
     created_at = Column(TIMESTAMP, server_default=func.now())
-
+    target_image_url = Column(String(500), nullable=False)
+    is_active = Column(Boolean, default=True)
 
 
 class ExercisePreset(Base):
@@ -201,7 +202,7 @@ class RehabPlan(Base):
     physician_id = Column(Integer, ForeignKey("physicians.user_id"), nullable=False)
     notes = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())
-
+    is_active = Column(Boolean, default=True)
     patient = relationship("Patient")
     physician = relationship("Physician")
 
@@ -216,7 +217,7 @@ class RehabPlanExercise(Base):
     target_sets = Column(Integer)
     max_duration = Column(Integer)
     custom_rules = Column(JSON)
-
+    is_active = Column(Boolean, default=True) 
     plan = relationship("RehabPlan")
     exercise = relationship("Exercise")
 

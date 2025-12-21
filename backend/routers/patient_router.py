@@ -1,3 +1,4 @@
+from http.client import HTTPException
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,7 @@ from services.patient_session_service import PatientSessionService
 router = APIRouter(prefix="/patient", tags=["Patient"])
 
 from sqlalchemy.future import select
-from database.models import PatientExercise
+from database.models import Exercise, Patient, PatientExercise
 
 
 @router.post("/session/{session_id}/frame")
@@ -124,4 +125,76 @@ async def get_patient_report(
             patient_id=user["user_id"],
             db=db
         )
+    }
+
+from fastapi import HTTPException
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+from database.models import Patient
+
+@router.get("/me")
+async def get_my_profile(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(Patient)
+        .options(selectinload(Patient.user))  # 🔥 IMPORTANT FIX
+        .where(Patient.user_id == user["user_id"])
+    )
+    patient = q.scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+
+    return {
+        "success": True,
+        "patient": {
+            "patient_id": patient.user_id,
+            "physician_id": patient.physician_id,
+            "full_name": patient.user.full_name,
+            "email": patient.user.email,
+            "profile_photo": patient.profile_photo,
+            "age": patient.age,
+            "gender": patient.gender,
+        }
+    }
+
+@router.get("/exercises")
+async def list_my_exercises(
+    user=Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(
+            PatientExercise.id.label("patient_exercise_id"),
+            Exercise.id.label("exercise_id"),
+            Exercise.name,
+            PatientExercise.sets,
+            PatientExercise.reps,
+            PatientExercise.frequency_per_day
+        )
+        .join(Exercise, Exercise.id == PatientExercise.exercise_id)
+        .where(
+            PatientExercise.patient_id == user["user_id"],
+            PatientExercise.is_active == True
+        )
+        .order_by(PatientExercise.created_at.desc())
+    )
+
+    exercises = [
+        {
+            "patient_exercise_id": r.patient_exercise_id,
+            "exercise_id": r.exercise_id,
+            "name": r.name,
+            "sets": r.sets,
+            "reps": r.reps,
+            "frequency_per_day": r.frequency_per_day
+        }
+        for r in q.all()
+    ]
+
+    return {
+        "success": True,
+        "exercises": exercises
     }

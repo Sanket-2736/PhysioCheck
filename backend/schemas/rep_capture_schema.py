@@ -1,6 +1,11 @@
 from pydantic import BaseModel
 from typing import Dict, List
 
+class AssignExerciseRequest(BaseModel):
+    exercise_id: int
+    sets: int
+    reps: int
+    frequency_per_day: int
 
 class FrameData(BaseModel):
     timestamp: float

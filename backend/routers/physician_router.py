@@ -1,144 +1,316 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from services.report_service import ReportService
-from services.live_feedback_service import LiveFeedbackService
-from services.patient_progress_service import PatientProgressService
-from database.connection import get_db
-from routers.auth_router import require_role
-from services.patient_session_service import PatientSessionService
-
-router = APIRouter(prefix="/patient", tags=["Patient"])
-
-
 from sqlalchemy.future import select
-from database.models import PatientExercise, Physician
+from sqlalchemy.orm import selectinload
 
-@router.post("/session/{session_id}/frame")
-async def live_feedback(
-    session_id: int,
-    payload: dict,
-    user=Depends(require_role("patient")),
+from database.connection import get_db
+from database.models import Patient, PatientExercise, RehabPlan, Exercise
+from routers.auth_router import require_role
+from schemas.profile_schemas import PhysicianProfileUpdate
+
+router = APIRouter(prefix="/physician", tags=["Physician"])
+
+@router.get("/patients")
+async def get_my_patients(
+    user=Depends(require_role("physician")),
     db: AsyncSession = Depends(get_db)
 ):
-    return await LiveFeedbackService.evaluate_frame(
-        session_id=session_id,
-        frame=payload["frame"],
-        db=db
+    q = await db.execute(
+        select(Patient)
+        .options(selectinload(Patient.user))
+        .where(Patient.physician_id == user["user_id"])
+    )
+    patients = q.scalars().all()
+
+    return {
+        "success": True,
+        "patients": [
+            {
+                "patient_id": p.user_id,
+                "full_name": p.user.full_name,
+                "email": p.user.email,
+                "age": p.age,
+                "gender": p.gender,
+                "profile_photo": p.profile_photo,  # ✅ needed by UI
+            }
+            for p in patients
+        ]
+    }
+
+@router.get("/patients/{patient_id}")
+async def get_patient_detail(
+    patient_id: int,
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(Patient)
+        .options(selectinload(Patient.user))
+        .where(
+            Patient.user_id == patient_id,
+            Patient.physician_id == user["user_id"]
+        )
+    )
+    patient = q.scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+
+    return {
+        "success": True,
+        "patient": {
+            # 🔹 USER INFO
+            "user_id": patient.user.id,
+            "full_name": patient.user.full_name,
+            "email": patient.user.email,
+            "phone": patient.user.phone,
+            "created_at": patient.user.created_at,
+
+            # 🔹 PATIENT INFO
+            "profile_photo": patient.profile_photo,
+            "age": patient.age,
+            "gender": patient.gender,
+            "height_cm": patient.height_cm,
+            "weight_kg": patient.weight_kg,
+            "injury_description": patient.injury_description,
+            "goals": patient.goals,
+        }
+    }
+
+@router.post("/patients/{patient_id}/rehab-plans")
+async def create_rehab_plan(
+    patient_id: int,
+    notes: str | None = None,
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    patient = await db.get(Patient, patient_id)
+
+    if not patient or patient.physician_id != user["user_id"]:
+        raise HTTPException(403, "Unauthorized patient")
+
+    plan = RehabPlan(
+        patient_id=patient_id,
+        physician_id=user["user_id"],
+        notes=notes
     )
 
-@router.post("/end-session/{session_id}")
-async def end_session(
-    session_id: int,
-    payload: dict,
-    user=Depends(require_role("patient")),
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+
+    return {
+        "success": True,
+        "rehab_plan_id": plan.id
+    }
+
+from schemas.rep_capture_schema import AssignExerciseRequest
+
+@router.post("/rehab-plans/{plan_id}/assign-exercise")
+async def assign_exercise(
+    plan_id: int,
+    payload: AssignExerciseRequest,
+    user=Depends(require_role("physician")),
     db: AsyncSession = Depends(get_db)
 ):
-    return await PatientSessionService.end_session(
-        session_id=session_id,
-        payload=payload,
-        db=db
+    plan = await db.get(RehabPlan, plan_id)
+
+    if not plan or plan.physician_id != user["user_id"]:
+        raise HTTPException(403, "Unauthorized plan")
+
+    assignment = PatientExercise(
+        patient_id=plan.patient_id,
+        physician_id=user["user_id"],
+        exercise_id=payload.exercise_id,
+        sets=payload.sets,
+        reps=payload.reps,
+        frequency_per_day=payload.frequency_per_day
     )
 
-@router.post("/start-session/{patient_exercise_id}")
-async def start_exercise_session(
-    patient_exercise_id: int,
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return await PatientSessionService.start_session(
-        patient_exercise_id=patient_exercise_id,
-        patient_id=user["user_id"],
-        db=db
-    )
+    db.add(assignment)
+    await db.commit()
 
-from services.analytics_service import AnalyticsService
-
-@router.get("/analytics/errors")
-async def error_frequency(
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return {
-        "success": True,
-        "errorFrequency": await AnalyticsService.get_error_frequency(
-            patient_id=user["user_id"],
-            db=db
-        )
-    }
-
-@router.get("/analytics/common-mistakes")
-async def common_mistakes(
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return {
-        "success": True,
-        "mistakes": await AnalyticsService.get_common_mistakes(
-            patient_id=user["user_id"],
-            db=db
-        )
-    }
-
-@router.get("/analytics/risks")
-async def risk_alerts(
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return {
-        "success": True,
-        "riskAlerts": await AnalyticsService.get_risk_summary(
-            patient_id=user["user_id"],
-            db=db
-        )
-    }
-
-@router.get("/progress")
-async def get_my_progress(
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return {
-        "daily": await PatientProgressService.get_daily_progress(user["user_id"], db),
-        "weekly": await PatientProgressService.get_weekly_progress(user["user_id"], db)
-    }
-
-@router.get("/report")
-async def get_patient_report(
-    user=Depends(require_role("patient")),
-    db: AsyncSession = Depends(get_db)
-):
-    return {
-        "success": True,
-        "report": await ReportService.patient_report(
-            patient_id=user["user_id"],
-            db=db
-        )
-    }
+    return {"success": True}
 
 @router.get("/")
-async def get_all_physicians(
+async def list_physicians(
+    user=Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db)
 ):
-    q = await db.execute(select(Physician))
+    q = await db.execute(
+        select(Physician)
+        .options(selectinload(Physician.user))
+    )
+
     physicians = q.scalars().all()
+
+    print("Fetched physicians:", physicians)
 
     return {
         "success": True,
-        "count": len(physicians),
         "physicians": [
             {
                 "physician_id": p.user_id,
                 "full_name": p.user.full_name,
                 "email": p.user.email,
-                "phone": p.user.phone,
                 "profile_photo": p.profile_photo,
                 "specialization": p.specialization,
-                "license_id": p.license_id,
                 "years_experience": p.years_experience,
-                "is_verified": p.is_verified,
-                "created_at": p.user.created_at
             }
             for p in physicians
         ]
     }
+
+@router.put("/rehab-plans/{plan_id}")
+async def update_rehab_plan(
+    plan_id: int,
+    target_reps: int | None = None,
+    frequency_per_week: int | None = None,
+    is_active: bool | None = None,
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    plan = await db.get(RehabPlan, plan_id)
+
+    if not plan or plan.physician_id != user["user_id"]:
+        raise HTTPException(404, "Rehab plan not found")
+
+    if target_reps is not None:
+        plan.target_reps = target_reps
+    if frequency_per_week is not None:
+        plan.frequency_per_week = frequency_per_week
+    if is_active is not None:
+        plan.is_active = is_active
+
+    await db.commit()
+    return {"success": True, "message": "Rehab plan updated"}
+
+from database.models import Physician, User
+from sqlalchemy.orm import selectinload
+
+@router.get("/me")
+async def get_my_profile(
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(Physician)
+        .options(selectinload(Physician.user))
+        .where(Physician.user_id == user["user_id"])
+    )
+
+    physician = q.scalar_one_or_none()
+
+    if not physician:
+        raise HTTPException(404, "Physician not found")
+
+    return {
+        "success": True,
+        "physician": {
+            "user_id": physician.user_id,
+            "full_name": physician.user.full_name,
+            "email": physician.user.email,
+            "phone": physician.user.phone,
+            "specialization": physician.specialization,
+            "license_id": physician.license_id,
+            "years_experience": physician.years_experience,
+            "is_verified": physician.is_verified,
+            "profile_photo": physician.profile_photo,
+            "credential_photo": physician.credential_photo,
+        }
+    }
+from utils.cloudinary import upload_profile_photo
+from fastapi import UploadFile, File
+
+@router.put("/me/profile-photo")
+async def upload_physician_profile_photo(
+    file: UploadFile = File(...),
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(Physician)
+        .where(Physician.user_id == user["user_id"])
+    )
+    physician = q.scalar_one_or_none()
+
+    if not physician:
+        raise HTTPException(404, "Physician not found")
+
+    # Upload to Cloudinary
+    photo_url = upload_profile_photo(file.file)
+
+    physician.profile_photo = photo_url
+    await db.commit()
+
+    return {
+        "success": True,
+        "profile_photo": photo_url
+    }
+
+@router.put("/me/credential-photo")
+async def upload_physician_credential_photo(
+    file: UploadFile = File(...),
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(
+        select(Physician)
+        .where(Physician.user_id == user["user_id"])
+    )
+    physician = q.scalar_one_or_none()
+
+    if not physician:
+        raise HTTPException(404, "Physician not found")
+
+    credential_url = upload_profile_photo(file.file)
+
+    physician.credential_photo = credential_url
+    await db.commit()
+
+    return {
+        "success": True,
+        "credential_photo": credential_url
+    }
+
+@router.put("/me")
+async def update_my_profile(
+    payload: PhysicianProfileUpdate,
+    user=Depends(require_role("physician")),
+    db: AsyncSession = Depends(get_db)
+):
+    print("Payload received for update:", payload)
+    q = await db.execute(
+        select(Physician)
+        .options(selectinload(Physician.user))
+        .where(Physician.user_id == user["user_id"])
+    )
+    physician = q.scalar_one_or_none()
+    print("Physician fetched from DB:", physician)
+
+    if not physician:
+        raise HTTPException(404, "Physician not found")
+
+    # 🔥 THIS LINE FIXES EVERYTHING
+    data = payload.dict(exclude_unset=True, exclude_none=True)
+    print("Data to be updated:", data)
+
+    if "full_name" in data:
+        physician.user.full_name = data["full_name"]
+    if "phone" in data:
+        physician.user.phone = data["phone"]
+
+    for field in [
+        "specialization",
+        "license_id",
+        "years_experience",
+        "profile_photo",
+        "credential_photo",
+    ]:
+        if field in data:
+            print(f"Updating {field} to {data[field]}")
+            setattr(physician, field, data[field])
+
+    await db.commit()
+
+    return {"success": True}
